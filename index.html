@@ -1171,7 +1171,7 @@ var SIM = (function () {
     return s / tries;
   }
 
-  return {raise, release, SPD, setLocation, LOCS, loc:() => LOC, init, addFly, makeChild, mutate, Fly, makeWorld, step, strike, impact, throwProj, raycast, runEpoch, breed, results, freshPool, randomGenome, benchmark, randomStyle, randomLand,
+  return {Brain, raise, release, SPD, setLocation, LOCS, loc:() => LOC, init, addFly, makeChild, mutate, Fly, makeWorld, step, strike, impact, throwProj, raycast, runEpoch, breed, results, freshPool, randomGenome, benchmark, randomStyle, randomLand,
     pushOut2D, kill, learnedGenome, inObst, smellAt, DT, RM, OBST, LAND, FOOD, WDEF, TRAITS, NAMES, X, XK, IN_CH, V, cp, d3, clamp, lerp, rnd, gauss, pick,
     dims:() => ({BN, BE, GL, GI_X, GI_E, NX, NEURONS, EA, EB, EW0, IN_NODES, OUTN, PERM, BRAIN})};
 })();
@@ -3409,33 +3409,93 @@ const SB = (() => {
   }
   const randLand = () => { const q = WD.randomLand(); return {p:q.p, n:q.n}; };
 
+  /* ---------- МОЗГ: у каждой мухи свой коннектом (367 нейронов FlyWire), гены и обучение ---------- */
+  let GI_X = 0, GL = 0, OUTN = null; const XI = S.X;
+  const dimsOK = () => { if (!OUTN || !GL) { const D = S.dims(); GI_X = D.GI_X; GL = D.GL; OUTN = D.OUTN; } };
+  const TRAIT_GENES = {smart:{smell:1.6, lr:1.6, loom:1, mem:1, steer:1.2}, dumb:{smell:-1.8, lr:-2.2, loom:-1.5, steer:-1.5, mem:-1.5}, chosen:{pred:1.5, steer:1.5, loom:1, jump:-0.5}, unlucky:{}};
+  function founderGenome() {   /* если в Лаборатории уже выведены мухи — колонии начинают с их генов */
+    dimsOK(); const pool = store.custom && store.custom.genomes;
+    if (pool && pool.length && pool[0].length === GL) { const g = Float32Array.from(pick(pool)); S.mutate(g, 0.5); return g; }
+    return S.randomGenome();
+  }
+  function childGenome(a, b) { const n = Math.min(a.length, b.length), g = new Float32Array(n); for (let i = 0; i < n; i++) g[i] = Math.random() < 0.5 ? a[i] : b[i]; S.mutate(g, 1); for (let i = GL; i < n; i++) if (Math.random() < 0.3) g[i] = clamp(g[i] + gauss() * 0.35, -4, 4); return g; }
+  function makeBrain(g, trait, old) {
+    dimsOK(); let gg = g; const tg = trait && TRAIT_GENES[trait];
+    if (tg) { gg = g.slice(); for (const k in tg) gg[GI_X + XI[k]] = clamp(gg[GI_X + XI[k]] + tg[k], -4, 4); }
+    const b = new S.Brain(gg); if (old) { b.w.set(old.w); b.w0 = old.w0; } return b;
+  }
+  let bBudget = 0;   /* сколько шагов мозга можно сделать за кадр: на ×30 мозги «дремлют» реже */
+  function brainTick(f, dt) {
+    f.bT += dt; if (f.bT < 0.1 || bBudget <= 0) { if (f.bT > 0.6) f.bT = 0.6; return; }
+    bBudget--; const b = f.br, I = b.inp, bt = f.bT; f.bT = 0; I.fill(0);
+    /* угроза: враги-воины, паук, твоя рука с тапком — растущая тень слева/справа */
+    let thr = null, tv = 0;
+    const consider = (p, v) => { if (v > tv) { tv = v; thr = p; } };
+    if (W.spider && W.spider.hp > 0) { const d = d3(W.spider.p, f.p); if (d < 1.2) consider(W.spider.p, (1.2 - d) / 1.2 * 1.4); }
+    if (hand.on && hand.harm) { const d = d3(hand.p, f.p); if (d < hand.r + 0.4) consider(hand.p, clamp((hand.r + 0.4 - d) / 0.4, 0, 1) * 1.5); }
+    if (f.scanFoe) consider(f.scanFoe.p, f.scanFoeV);
+    if (thr) { const rel = angDiff(f.h, Math.atan2(thr.z - f.p.z, thr.x - f.p.x)); I[0] = (rel < 0 ? tv : tv * 0.3) * b.kLoom; I[1] = (rel < 0 ? tv * 0.3 : tv) * b.kLoom; }
+    f.thr = thr;
+    /* запах еды (рабочие) или дома (с ношей) */
+    const sm = f.smellT; if (sm) { const d = Math.hypot(sm.p.x - f.p.x, sm.p.z - f.p.z), s = clamp(1 - d / 4, 0, 1) * (sm.amt ? clamp(sm.amt / 25, 0.4, 1) : 1), rel = angDiff(f.h, Math.atan2(sm.p.z - f.p.z, sm.p.x - f.p.x)); I[2] = (rel < 0 ? s : s * 0.4) * b.kSmell; I[3] = (rel < 0 ? s * 0.4 : s) * b.kSmell; }
+    if (f.st === 'eat') I[4] = I[5] = 1;
+    if (W.wind > 0) I[6] = I[7] = 0.8 * b.kWind;
+    I[8] = f.dop * 1.5; I[9] = f.pain * 1.5;
+    b.step(true);
+    f.dop *= Math.exp(-bt * 2); f.pain *= Math.exp(-bt * 2);
+    const jump = Math.max(b.mean(OUTN.jumpL), b.mean(OUTN.jumpR));
+    f.o.turn = (b.mean(OUTN.turnR) - b.mean(OUTN.turnL)) * b.kTurn; f.o.fwd = (b.mean(OUTN.fwd) - b.mean(OUTN.back)) * b.kFwd; f.o.fly = b.mean(OUTN.fly);
+    const jd = jump - f.jb; f.jb += (jump - f.jb) * Math.min(1, bt * b.aRate); f.o.jump = jd;
+    /* гигантское волокно: резкий всплеск — муха прыгает прочь (никакого сценария — решает коннектом) */
+    if (jd > b.thJump && f.cd <= 0 && thr && !(f.role === 'warrior' && f.hp > f.maxHp * 0.4) && f.role !== 'queen') startle(f, thr);
+  }
+  function reward(f, r) { if (!f.br) return; if (r > 0) f.dop = Math.min(1.5, f.dop + r); else f.pain = Math.min(1.5, f.pain - r); f.br.reinforce(r * 0.03); }
+  function startle(f, thr) {
+    let ax = f.p.x - thr.x, az = f.p.z - thr.z; const l = Math.hypot(ax, az) || 1; ax /= l; az /= l;
+    const a = f.br.jAim; ax = lerp(R(-1, 1), ax, a); az = lerp(R(-1, 1), az, a);
+    let q = null; for (let k = 0; k < 6 && !q; k++) { const t = randLand(); if (Math.hypot(t.p.x - f.p.x, t.p.z - f.p.z) < 1.4 && (t.p.x - f.p.x) * ax + (t.p.z - f.p.z) * az > 0.1) q = t; }
+    if (!q) q = {p:V(clamp(f.p.x + ax * 0.6, -8.8, 8.8), 0.002, clamp(f.p.z + az * 0.6, -5.8, 5.8)), n:V(0, 1, 0)};
+    f.cd = 2.5; f.st = 'flee'; f.stT = R(1, 2.5); f.foe = null; flyTo(f, q); f.escapes = (f.escapes || 0) + 1;
+  }
+  const learned = b => { let s = 0, s0 = 0; for (let k = 0; k < b.w.length; k++) { s += Math.abs(b.w[k] - b.w0[k]); s0 += Math.abs(b.w0[k]); } return s0 ? s / s0 : 0; };
+
   /* ---------- колонии ---------- */
   function colonyOf(team) { return W.cols.find(c => c.team === team && !c.dead); }
   function newColony(team, q) {
-    const c = {team, name:TEAMS[team].name, color:new THREE.Color(TEAMS[team].c), css:TEAMS[team].c, nest:{p:V(q.p.x, q.p.y, q.p.z), n:q.n}, food:6, build:0, lv:1, births:0, deaths:0, kills:0, hist:[], house:new THREE.Group(), queenless:0, lastFoe:null, born:W.t};
+    const c = {team, name:TEAMS[team].name, color:new THREE.Color(TEAMS[team].c), css:TEAMS[team].c, nest:{p:V(q.p.x, q.p.y, q.p.z), n:q.n}, food:6, build:0, lv:1, births:0, deaths:0, kills:0, hist:[], house:new THREE.Group(), lastFoe:null, born:W.t, n:0, q:0, wk:0, wr:0, eg:0};
     root.add(c.house); buildHouse(c); W.cols.push(c); log(`${dot(c)} Основана колония <b>${c.name}</b>`); return c;
   }
   function buildHouse(c) {
     c.house.clear(); const n = c.nest.n; c.house.position.set(c.nest.p.x, c.nest.p.y, c.nest.p.z); c.house.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(n.x, n.y, n.z)); c.house.scale.setScalar(HS);
-    const mud = new THREE.MeshStandardMaterial({color:0x8a6a48, roughness:0.95}), roof = new THREE.MeshStandardMaterial({color:c.color, roughness:0.55}), wall = new THREE.MeshStandardMaterial({color:0xe9dcc4, roughness:0.8}), dark = new THREE.MeshStandardMaterial({color:0x1a1410, roughness:1});
+    const dim = c.dead ? 0.35 : 1, M = (col, r) => { const m = new THREE.MeshStandardMaterial({color:col, roughness:r}); m.color.multiplyScalar(dim); m.envMapIntensity = 0.25; return m; };
+    const mud = M(0x8a6a48, 0.95), roof = M(c.color, 0.55), wall = M(0xe9dcc4, 0.8), dark = M(0x1a1410, 1), win = M(0x7fb0d8, 0.3);
     const add = (geo, mat, x, y, z) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = m.receiveShadow = true; c.house.add(m); return m; };
-    const hut = (x, z, s) => { add(new THREE.BoxGeometry(0.05 * s, 0.035 * s, 0.045 * s), wall, x, 0.0175 * s, z); add(new THREE.ConeGeometry(0.042 * s, 0.03 * s, 4), roof, x, 0.05 * s, z).rotation.y = Math.PI / 4; add(new THREE.BoxGeometry(0.012 * s, 0.018 * s, 0.002), dark, x + 0.0 * s, 0.009 * s, z + 0.0231 * s); };
+    const hut = (x, z, s, r = 0) => { const g = new THREE.Group(); g.position.set(x, 0, z); g.rotation.y = r; c.house.add(g);
+      const p = (geo, mat, a, b, cc) => { const m = new THREE.Mesh(geo, mat); m.position.set(a, b, cc); m.castShadow = m.receiveShadow = true; g.add(m); return m; };
+      p(new THREE.BoxGeometry(0.05 * s, 0.035 * s, 0.045 * s), wall, 0, 0.0175 * s, 0); p(new THREE.ConeGeometry(0.042 * s, 0.03 * s, 4), roof, 0, 0.05 * s, 0).rotation.y = Math.PI / 4;
+      p(new THREE.BoxGeometry(0.012 * s, 0.018 * s, 0.002), dark, 0, 0.009 * s, 0.0231 * s); p(new THREE.BoxGeometry(0.002, 0.01 * s, 0.012 * s), win, 0.0251 * s, 0.02 * s, 0); p(new THREE.BoxGeometry(0.002, 0.01 * s, 0.012 * s), win, -0.0251 * s, 0.02 * s, 0); };
     const L = c.lv;
-    if (L === 1) for (let k = 0; k < 4; k++) add(new THREE.SphereGeometry(0.012, 10, 8), mud, R(-0.015, 0.015), 0.006, R(-0.015, 0.015)).scale.y = 0.6;
+    if (L === 1) for (let k = 0; k < 5; k++) add(new THREE.SphereGeometry(0.012, 10, 8), mud, R(-0.016, 0.016), 0.006, R(-0.016, 0.016)).scale.y = 0.6;
     if (L === 2) { const d = add(new THREE.SphereGeometry(0.035, 20, 12, 0, TAU, 0, Math.PI / 2), mud, 0, 0, 0); d.scale.y = 0.8; add(new THREE.CircleGeometry(0.009, 12), dark, 0, 0.01, 0.0345); add(new THREE.ConeGeometry(0.006, 0.02, 8), roof, 0, 0.035, 0); }
-    if (L === 3) hut(0, 0, 1.2);
-    if (L >= 4) { hut(-0.04, -0.02, 1.1); hut(0.045, -0.015, 1); hut(0.0, 0.045, 0.95); }
-    if (L >= 5) { add(new THREE.CylinderGeometry(0.018, 0.022, 0.11, 12), wall, 0.065, 0.055, 0.05); add(new THREE.ConeGeometry(0.026, 0.04, 12), roof, 0.065, 0.13, 0.05); add(new THREE.CylinderGeometry(0.0012, 0.0012, 0.05, 5), dark, 0.065, 0.17, 0.05); add(new THREE.PlaneGeometry(0.03, 0.018), new THREE.MeshStandardMaterial({color:c.color, side:THREE.DoubleSide}), 0.08, 0.185, 0.05); hut(-0.06, 0.06, 0.9); }
-    if (c.dead) c.house.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); o.material.color.multiplyScalar(0.35); } });
+    if (L === 3) hut(0, 0, 1.2, 0.3);
+    if (L >= 4) { hut(-0.045, -0.02, 1.1, 0.2); hut(0.05, -0.015, 1, -0.4); hut(0.0, 0.05, 0.95, 0.9); add(new THREE.CylinderGeometry(0.075, 0.075, 0.002, 24), mud, 0, 0.001, 0); }
+    if (L >= 5) { add(new THREE.CylinderGeometry(0.018, 0.022, 0.11, 12), wall, 0.07, 0.055, 0.055); add(new THREE.ConeGeometry(0.026, 0.04, 12), roof, 0.07, 0.13, 0.055); add(new THREE.CylinderGeometry(0.0012, 0.0012, 0.05, 5), dark, 0.07, 0.17, 0.055); add(new THREE.PlaneGeometry(0.03, 0.018), M(c.color, 0.6), 0.085, 0.185, 0.055).material.side = THREE.DoubleSide; hut(-0.065, 0.065, 0.9, -0.7); }
   }
   function addFly(role, c, q, opt = {}) {
     if (W.flies.length >= MAXF - 40) return null;
     const f = {id:W.nid++, role, col:c, p:V(q.p.x + q.n.x * 0.003, q.p.y + q.n.y * 0.003, q.p.z + q.n.z * 0.003), n:q.n, v:V(), h:R(0, TAU), landed:true, tgt:null, st:'idle', stT:R(0.5, 2), hp:0, age:0,
-      life:role === 'queen' ? R(1500, 2200) : R(420, 700), carry:0, trait:opt.trait || null, name:nameOf(), kills:0, foe:null, scanT:R(0, 0.5), stun:0, zz:R(-1, 1), zzT:0, layT:R(3, 6), flap:R(0, 10)};
+      life:role === 'queen' ? R(1500, 2200) : R(420, 700), carry:0, trait:opt.trait || null, name:nameOf(), kills:0, deliv:0, foe:null, scanT:R(0, 0.5), stun:0, zz:R(-1, 1), zzT:0, layT:R(3, 6),
+      g:opt.g || founderGenome(), br:null, bT:R(0, 0.1), o:{jump:0, turn:0, fwd:0, fly:0}, jb:0, dop:0, pain:0, cd:0, urge:R(0, 0.6), gen:opt.gen || 1};
+    f.br = makeBrain(f.g, f.trait);
     f.maxHp = (role === 'queen' ? 18 : role === 'warrior' ? 7 : 3) * (f.trait === 'chosen' ? 3 : 1); f.hp = f.maxHp;
     W.flies.push(f); return f;
   }
-  const spd = f => (f.role === 'queen' ? 0.45 : f.role === 'warrior' ? 1.35 : 1.05) * (f.trait === 'chosen' ? 1.3 : f.trait === 'smart' ? 1.12 : f.trait === 'dumb' ? 0.8 : 1) * (f.col && f.col.lv >= 3 && f.role === 'worker' ? 1.2 : 1);
+  function setTrait(f, t) {
+    const was = f.trait; if (was === t) return false; f.trait = t;
+    if (t === 'chosen') { f.maxHp *= 3; f.hp = f.maxHp; } else if (was === 'chosen') { f.maxHp /= 3; f.hp = Math.min(f.hp, f.maxHp); }
+    f.br = makeBrain(f.g, t, f.br); return true;
+  }
+  const spd = f => (f.role === 'queen' ? 0.45 : f.role === 'warrior' ? 1.35 : 1.05) * (f.trait === 'chosen' ? 1.3 : f.trait === 'smart' ? 1.12 : f.trait === 'dumb' ? 0.8 : 1) * (f.col && f.col.lv >= 3 && f.role === 'worker' ? 1.2 : 1) * (0.85 + 0.3 * clamp(f.o.fwd, 0, 1));
   const dmg = f => (f.role === 'warrior' ? 2.2 : f.role === 'queen' ? 1 : 0.5) * (f.trait === 'chosen' ? 2.5 : 1) * (f.col && f.col.lv >= 4 && f.role === 'warrior' ? 1.3 : 1);
   const senseR = f => (f.role === 'warrior' ? 1.1 : 0.9) * (f.trait === 'smart' ? 2 : f.trait === 'dumb' ? 0.5 : 1);
   function flyTo(f, q, st) { f.tgt = q; if (st) f.st = st; if (f.landed) { f.landed = false; f.p.x += f.n.x * 0.008; f.p.y += f.n.y * 0.008; f.p.z += f.n.z * 0.008; } }
@@ -3446,10 +3506,10 @@ const SB = (() => {
   /* ---------- журнал ---------- */
   const logs = []; let logDirty = true;
   const dot = c => `<i style="background:${c.css}"></i>`;
-  function log(html) { const d = Math.floor(W.t / DAY) + 1; logs.unshift(`<span class="t">д${d}</span> ${html}`); if (logs.length > 9) logs.pop(); logDirty = true; }
+  function log(html) { const d = Math.floor(W.t / DAY) + 1; logs.unshift({h:`<span class="t">д${d}</span> ${html}`, at:performance.now()}); if (logs.length > 40) logs.pop(); logDirty = true; }
   const who = f => `${f.trait ? TRAIT[f.trait].ic : ''}<b>${f.name}</b>`;
 
-  /* ---------- движение мухи ---------- */
+  /* ---------- движение ---------- */
   function collide(f) {
     const p = f.p, m = 0.004, RM = WD.RM;
     p.x = clamp(p.x, RM.x0 + m, RM.x1 - m); p.y = clamp(p.y, RM.y0 + m, RM.y1 - m); p.z = clamp(p.z, RM.z0 + m, RM.z1 - m);
@@ -3458,66 +3518,65 @@ const SB = (() => {
       if (k === 0) p.x = b.x0 - m; else if (k === 1) p.x = b.x1 + m; else if (k === 2) p.y = b.y0 - m; else if (k === 3) p.y = b.y1 + m; else if (k === 4) p.z = b.z0 - m; else p.z = b.z1 + m; }
   }
   function move(f, dt) {
-    if (f.stun > 0) { f.stun -= dt; if (!f.landed) { f.v.y -= 3 * dt; for (let i = 0; i < 3; i++) { f.p.x += f.v.x * dt / 3; f.p.y += f.v.y * dt / 3; f.p.z += f.v.z * dt / 3; collide(f); } if (f.p.y < 0.006) { f.p.y = 0.002; f.landed = true; f.n = V(0, 1, 0); f.v = V(); } } return; }
+    if (f.stun > 0) { f.stun -= dt; if (!f.landed) { f.v.y -= 3 * dt; for (let i = 0; i < 3; i++) { f.p.x += f.v.x * dt / 3; f.p.y += f.v.y * dt / 3; f.p.z += f.v.z * dt / 3; collide(f); } const hit = WD.raycast(f.p, V(0, -1, 0), 0.012); if (hit || f.p.y < 0.006) { if (hit) { S.cp(f.p, hit.p); f.p.y += 0.002; } else f.p.y = 0.002; f.landed = true; f.n = V(0, 1, 0); f.v = V(); f.tgt = null; } } return; }
     const q = f.tgt; if (!q || f.landed) return;
     const dx = q.p.x - f.p.x, dy = q.p.y - f.p.y, dz = q.p.z - f.p.z, d = Math.hypot(dx, dy, dz);
-    if (d < 0.02) { S.cp(f.p, q.p); f.n = q.n; f.landed = true; f.v = V(); f.arrived = true; f.p.x += q.n.x * 0.002; f.p.y += q.n.y * 0.002; f.p.z += q.n.z * 0.002; return; }
+    if (d < 0.02) { S.cp(f.p, q.p); f.n = q.n; f.landed = true; f.v = V(); f.p.x += q.n.x * 0.002; f.p.y += q.n.y * 0.002; f.p.z += q.n.z * 0.002; return; }
     let ux = dx / d, uy = dy / d, uz = dz / d;
-    if (d > 0.25) { f.zzT -= dt; if (f.zzT <= 0) { f.zz = -Math.sign(f.zz || 1) * R(0.3, 0.7); f.zzT = R(0.1, 0.3); } const lx = -uz, lz = ux; ux += lx * f.zz * 0.6; uz += lz * f.zz * 0.6; }   /* зигзаги */
-    const la = Math.min(0.1, d * 0.8); if (WD.inObst(f.p.x + ux * la, f.p.y + uy * la, f.p.z + uz * la, 0.015) && !(d < 0.12)) uy += 1.1;   /* препятствие — перелетает сверху */
+    if (d > 0.25) { f.zzT -= dt; if (f.zzT <= 0) { f.zz = -Math.sign(f.zz || 1) * R(0.3, 0.7); f.zzT = R(0.1, 0.3); } const lx = -uz, lz = ux, tb = clamp(f.o.turn, -1, 1) * 0.35; ux += lx * (f.zz * 0.6 + tb); uz += lz * (f.zz * 0.6 + tb); }   /* зигзаги + «характер» поворотов из мозга */
+    const la = Math.min(0.1, d * 0.8); if (WD.inObst(f.p.x + ux * la, f.p.y + uy * la, f.p.z + uz * la, 0.015) && !(d < 0.12)) uy += 1.1;
     const l = Math.hypot(ux, uy, uz); ux /= l; uy /= l; uz /= l;
     const s = spd(f) * (d < 0.25 ? Math.max(0.3, d / 0.25) : 1), k = Math.min(1, dt * 7);
     f.v.x += (ux * s - f.v.x) * k; f.v.y += (uy * s - f.v.y) * k; f.v.z += (uz * s - f.v.z) * k;
-    if (W.wind > 0) f.v.x -= 1.4 * dt * 10 * (f.p.y > 0.3 ? 1 : 0.3);
+    if (W.wind > 0) f.v.x -= 14 * dt * (f.p.y > 0.3 ? 1 : 0.3);
     const n = Math.min(10, Math.ceil(Math.hypot(f.v.x, f.v.y, f.v.z) * dt / 0.006)) || 1;
     for (let i = 0; i < n; i++) { f.p.x += f.v.x * dt / n; f.p.y += f.v.y * dt / n; f.p.z += f.v.z * dt / n; collide(f); }
-    f.h = Math.atan2(f.v.z, f.v.x);
+    if (Math.hypot(f.v.x, f.v.z) > 0.01) f.h = Math.atan2(f.v.z, f.v.x);
   }
 
-  /* ---------- поведение ---------- */
-  function enemies(f) { const out = []; for (const o of W.flies) if (o !== f && o.col !== f.col && o.role !== 'student' && o.hp > 0 && o.col) out.push(o); return out; }
+  /* ---------- поведение: цели решает колония, а «когда» и «бежать ли» — мозг мухи ---------- */
   function nearestEnemy(f, r) {
     let best = null, bd = r;
     if (W.spider && W.spider.hp > 0 && f.role !== 'worker') { const d = d3(W.spider.p, f.p); if (d < bd) { bd = d; best = W.spider; } }
-    for (const o of W.flies) { if (o === f || o.col === f.col || !o.col || o.role === 'student' || o.hp <= 0) continue; const d = Math.abs(o.p.x - f.p.x) + Math.abs(o.p.y - f.p.y) + Math.abs(o.p.z - f.p.z); if (d < bd) { bd = d; best = f.trait === 'smart' && f.role === 'warrior' && best && best.hp < o.hp ? best : o; } }
+    for (const o of W.flies) { if (o === f || o.col === f.col || !o.col || o.role === 'student' || o.hp <= 0) continue; const d = Math.abs(o.p.x - f.p.x) + Math.abs(o.p.y - f.p.y) + Math.abs(o.p.z - f.p.z); if (d < bd) { bd = d; best = o; } }
     return best;
   }
   function mishap(f) {
-    const lines = ['врезалась в холодильник', 'уронила сахар', 'поскользнулась на варенье', 'запуталась в собственных лапках', 'чихнула и упала', 'приняла окно за небо', 'заблудилась в трёх стульях', 'укусила себя за крыло'];
-    const fatal = Math.random() < 0.1;
-    if (fatal) { const how = pick(['упала в кружку с чаем', 'прилипла к варенью навсегда', 'попала под пролетающую крошку', 'врезалась в лампу на полной скорости']); log(`🌧 ${who(f)} нелепо погибла: ${how}`); ACH.give('sb_unlucky'); kill(f, null); return; }
-    f.carry = 0; f.stun = 1.5; f.hp = Math.max(0.5, f.hp - 0.5); if (Math.random() < 0.35) log(`🌧 ${who(f)} ${pick(lines)}`);
+    const lines = ['врезалась в будку', 'уронила сахар', 'поскользнулась на арбузе', 'запуталась в собственных лапках', 'чихнула и упала', 'приняла пруд за небо', 'заблудилась в трёх травинках', 'укусила себя за крыло'];
+    if (Math.random() < 0.1) { const how = pick(['упала в пруд', 'прилипла к торту навсегда', 'попала под падающее яблоко', 'врезалась в фонарь на полной скорости']); log(`🌧 ${who(f)} нелепо погибла: ${how}`); ACH.give('sb_unlucky'); kill(f, null); return; }
+    f.carry = 0; f.stun = 1.5; f.hp = Math.max(0.5, f.hp - 0.5); reward(f, -0.3); if (Math.random() < 0.35) log(`🌧 ${who(f)} ${pick(lines)}`);
   }
   function kill(f, by) {
     if (f.hp <= -99) return; f.hp = -100;
     if (f.col) f.col.deaths++;
-    if (by && by.col) { by.kills++; by.col.kills++; if (f.col) f.col.lastFoe = by.col; if (by.trait === 'chosen' && by.kills === 10) { log(`✨ ${who(by)} одолела 10 врагов!`); ACH.give('sb_chosen'); } }
+    if (by && by.col) { by.kills++; by.col.kills++; reward(by, 1); if (f.col) { f.col.lastFoe = by.col; f.col.lastFoeT = W.t; } if (by.trait === 'chosen' && by.kills === 10) { log(`✨ ${who(by)} одолела 10 врагов!`); ACH.give('sb_chosen'); } }
     if (f.role === 'queen') log(`${dot(f.col)} 👑 Погибла королева ${who(f)}${by && by.col ? ` (от ${by.col.name})` : by === W.spider ? ' (паук!)' : ''}`);
     else if (f.trait === 'chosen') log(`✨ Пала избранная ${who(f)}`);
-    W.corpses.push({p:V(f.p.x, f.p.y, f.p.z), n:f.landed ? f.n : V(0, 1, 0), h:f.h}); if (W.corpses.length > 200) W.corpses.shift();
-    if (W.follow === f) W.follow = null;
+    W.corpses.push({p:V(f.p.x, f.p.y, f.p.z), n:f.landed ? f.n : V(0, 1, 0), t:W.t}); if (W.corpses.length > 200) W.corpses.shift();
   }
+  function hurt(f, a, by) { f.hp -= a; if ((f.painCD || 0) < W.t) { f.painCD = W.t + 1; reward(f, -0.6); } if (f.hp <= 0) kill(f, by); }
   function worker(f, dt) {
     const c = f.col, night = isNight();
     if (f.foe) return fight(f, dt);
-    if ((f.scanT -= dt) <= 0) {
-      f.scanT = 0.5; const e = nearestEnemy(f, f.trait === 'smart' ? 0.7 : 0.35);
-      if (e && e !== W.spider && e.role === 'warrior' && f.trait !== 'chosen' && f.st !== 'flee') { f.st = 'flee'; flyTo(f, nestSpot(c)); }
-      else if (e && e === W.spider && d3(e.p, f.p) < 0.4) { f.st = 'flee'; flyTo(f, randLand()); }
-    }
+    if ((f.scanT -= dt) <= 0) { f.scanT = 0.5; const e = nearestEnemy(f, 0.8); f.scanFoe = e && e !== W.spider && e.role === 'warrior' ? e : null; f.scanFoeV = f.scanFoe ? clamp((0.8 - d3(e.p, f.p)) / 0.8, 0, 1) * 1.2 : 0; }
     if (f.trait === 'unlucky' && Math.random() < dt * 0.03) return mishap(f);
     if (!f.landed) return;
     f.stT -= dt;
     switch (f.st) {
-      case 'idle': case 'flee': case 'rest':
-        if (night) { f.st = 'rest'; return; }
+      case 'idle': case 'flee': case 'rest': {
+        if (night) { f.st = 'rest'; f.smellT = null; return; }
         if (f.stT > 0) return;
+        /* ищет запах: ближайшая еда в радиусе нюха (нюх — ген kSmell) */
+        const r = 1.6 + 1.6 * f.br.kSmell; let best = null, bd = 1e9;
+        for (const fd of W.foods) { if (fd.amt < 0.5) continue; const d = d3(fd.p, f.p); const sc = d - (f.trait === 'smart' ? fd.amt * 0.03 : 0); if (d < r && sc < bd) { bd = sc; best = fd; } }
+        f.smellT = best;
+        /* решение вылететь — мозг: нейроны полёта + запах копят «желание», которое и запускает вылет */
+        f.urge += dt * (0.25 + 3 * f.o.fly + 0.8 * (f.br.inp[2] + f.br.inp[3])) * (f.trait === 'dumb' ? 0.6 : 1);
+        if (f.urge < 1) return; f.urge = 0;
         if (f.trait === 'dumb' && Math.random() < 0.15) { f.st = 'window'; flyTo(f, near(WD.LAMP, 0.08)); f.stT = 8; return; }
-        { let best = null, bd = 1e9; const r = senseR(f) * 3;
-          for (const fd of W.foods) { if (fd.amt < 0.5) continue; const d = d3(fd.p, f.p); const sc = f.trait === 'smart' ? d - fd.amt * 0.02 : d; if (d < r && sc < bd) { bd = sc; best = fd; } }
-          if (f.trait === 'dumb' && Math.random() < 0.35) best = null;
-          if (best) { f.food = best; flyTo(f, near(best, 0.012), 'toFood'); } else { flyTo(f, randLand(), 'search'); f.stT = 1; } }
-        break;
+        if (f.trait === 'dumb' && Math.random() < 0.35) best = null;
+        if (best) { f.food = best; flyTo(f, near(best, 0.012), 'toFood'); } else { flyTo(f, randLand(), 'search'); f.stT = 1; }
+        break; }
       case 'search': if (f.stT <= 0) { f.st = 'idle'; f.stT = 0; } break;
       case 'window': if (f.stT <= 0) { f.st = 'idle'; } else if (Math.random() < dt * 2) { f.landed = false; f.tgt = near(WD.LAMP, 0.08); } break;
       case 'toFood':
@@ -3525,15 +3584,15 @@ const SB = (() => {
         f.st = 'eat'; f.stT = f.trait === 'dumb' ? 2.5 : 1.2; break;
       case 'eat':
         if (f.stT > 0) break;
-        if (f.food && f.food.amt >= 0.5) { const take = f.trait === 'smart' || f.trait === 'chosen' ? 2 : 1; f.food.amt -= take; f.carry = take; }
-        { let dest = c; if (f.trait === 'dumb' && Math.random() < 0.15) { const o = W.cols.filter(x => x !== c && !x.dead); if (o.length) { dest = pick(o); f.wrong = dest; } } flyTo(f, nestSpot(dest), 'toNest'); }
+        if (f.food && f.food.amt >= 0.5) { const take = f.trait === 'smart' || f.trait === 'chosen' ? 2 : 1; f.food.amt -= take; f.carry = take; reward(f, 0.4); }
+        { let dest = c; if (f.trait === 'dumb' && Math.random() < 0.15) { const o = W.cols.filter(x => x !== c && !x.dead); if (o.length) { dest = pick(o); f.wrong = dest; } } f.smellT = {p:dest.nest.p}; flyTo(f, nestSpot(dest), 'toNest'); }
         break;
       case 'toNest':
         if (f.carry) {
-          if (f.wrong) { f.wrong.food += f.carry; if (Math.random() < 0.5) log(`🤪 ${who(f)} по ошибке отнесла еду колонии ${f.wrong.name}`); f.wrong = null; f.carry = 0; flyTo(f, nestSpot(c), 'idle'); f.stT = 0; break; }
-          deposit(c, f.carry); f.carry = 0;
+          if (f.wrong) { if (!f.wrong.dead) f.wrong.food += f.carry; if (Math.random() < 0.5) log(`🤪 ${who(f)} по ошибке отнесла еду колонии ${f.wrong.name}`); f.wrong = null; f.carry = 0; flyTo(f, nestSpot(c), 'idle'); f.stT = 0; break; }
+          deposit(c, f.carry); f.carry = 0; f.deliv++; reward(f, 1);
         }
-        f.st = 'idle'; f.stT = R(0.5, 2); break;
+        f.st = 'idle'; f.stT = R(0.5, 2); f.smellT = null; break;
     }
   }
   function deposit(c, n) {
@@ -3544,15 +3603,13 @@ const SB = (() => {
     const c = f.col;
     if (f.foe) return fight(f, dt);
     if ((f.scanT -= dt) <= 0) {
-      f.scanT = 0.4; const e = nearestEnemy(f, senseR(f) * (c.raid ? 4 : 1));
-      /* территория: чужих бьют только у своего дома, в набеге или если те напали сами */
-      const terr = 0.75 + c.lv * 0.12;
+      f.scanT = 0.4; const e = nearestEnemy(f, senseR(f) * (c.raid ? 4 : 1)), terr = 0.75 + c.lv * 0.12;
       if (e && (e === W.spider || c.raid || d3(e.p, c.nest.p) < terr || (e.foe && e.foe.col === c))) { f.foe = e; f.st = 'attack'; flyTo(f, {p:e.p, n:e.n || V(0, 1, 0)}); return; }
     }
     if (!f.landed) return;
     f.stT -= dt; if (f.stT > 0) return;
     if (c.raid && !c.raid.dead && Math.random() < 0.7) { flyTo(f, nestSpot(c.raid), 'raid'); f.stT = 2; return; }
-    f.st = isNight() ? 'rest' : 'patrol'; flyTo(f, near(c.nest, 0.5 + (c.lv - 1) * 0.12)); f.stT = R(1.5, 4);
+    f.st = isNight() ? 'rest' : 'patrol'; flyTo(f, nearOn(c.nest, 0.4 + (c.lv - 1) * 0.1)); f.stT = R(1.5, 4) / (0.7 + clamp(f.o.fly * 3, 0, 1));
   }
   function fight(f, dt) {
     const e = f.foe;
@@ -3562,20 +3619,26 @@ const SB = (() => {
     if (f.trait === 'smart' && f.hp < f.maxHp * 0.25 && f.role === 'warrior') { f.foe = null; f.st = 'retreat'; flyTo(f, nestSpot(f.col)); return; }
     if (d > 0.04) { f.tgt = {p:e.p, n:e.n || V(0, 1, 0)}; if (f.landed && d > 0.05) flyTo(f, f.tgt); f.st = 'attack'; return; }
     f.st = 'fight'; f.landed = false; f.tgt = null;
-    const a = W.t * 9 + f.id; f.p.x = e.p.x + Math.cos(a) * 0.02; f.p.y = e.p.y + 0.012 + Math.sin(a * 1.7) * 0.006; f.p.z = e.p.z + Math.sin(a) * 0.02; f.h = a + Math.PI / 2;
-    e.hp -= dmg(f) * dt * R(0.6, 1.4); if (e !== W.spider && !e.foe && e.role !== 'student') e.foe = f;
-    if (e.hp <= 0) { if (e === W.spider) { log(`🕷 Паук повержен! Героиня — ${who(f)} (${f.col.name})`); sfx('fanfare', null, 0.5); W.spider.hp = 0; } else kill(e, f); f.foe = null; f.st = 'idle'; }
+    const a = W.t * 9 + f.id; f.p.x = e.p.x + Math.cos(a) * 0.02; f.p.y = e.p.y + 0.012 + Math.sin(a * 1.7) * 0.006; f.p.z = e.p.z + Math.sin(a) * 0.02; f.h = a + Math.PI / 2; f.v.x = -Math.sin(a); f.v.z = Math.cos(a); f.v.y = 0;
+    collide(f);
+    const hit = dmg(f) * dt * R(0.6, 1.4);
+    if (e === W.spider) { e.hp -= hit; if (e.hp <= 0) { log(`🕷 Паук повержен! Героиня — ${who(f)} (${f.col.name})`); sfx('fanfare', null, 0.5); reward(f, 1); } }
+    else { if (!e.foe && e.role !== 'student') e.foe = f; hurt(e, hit, f); }
+    if (e.hp <= 0) { f.foe = null; f.st = 'idle'; }
   }
   function queen(f, dt) {
     const c = f.col;
     if (f.foe) return fight(f, dt);
     if (!f.landed) return;
+    if (d3(f.p, c.nest.p) > 0.4) { flyTo(f, nestSpot(c)); return; }   /* королева живёт дома */
     f.st = 'lay'; f.layT -= dt * (c.lv >= 5 ? 2 : 1);
-    const pop = W.flies.filter(o => o.col === c && o.hp > 0).length + W.eggs.filter(e => e.col === c).length;
+    const pop = c.n + c.eg;
     if (f.layT <= 0 && c.food >= 3 && pop < CAP[c.lv] && !isNight()) {
       c.food -= 3; f.layT = R(4, 7);
       const threat = c.lastFoe && W.t - (c.lastFoeT || -99) < 30;
-      W.eggs.push({col:c, p:nestSpot(c), t:W.t + R(9, 13), role:Math.random() < (threat ? 0.55 : 0.28) ? 'warrior' : 'worker'});
+      /* гены: королева + лучшая добытчица/воин колонии */
+      let dad = null, bs = -1; for (const o of W.flies) if (o.col === c && o.hp > 0 && o !== f) { const s = o.deliv + o.kills * 2 + Math.random(); if (s > bs) { bs = s; dad = o; } }
+      W.eggs.push({col:c, p:nestSpot(c), t:W.t + R(9, 13), role:Math.random() < (threat ? 0.55 : 0.28) ? 'warrior' : 'worker', g:childGenome(f.g, dad ? dad.g : f.g), gen:Math.max(f.gen, dad ? dad.gen : 0) + 1});
     }
   }
 
@@ -3585,47 +3648,42 @@ const SB = (() => {
     W.t += dt;
     W.light = clamp(Math.sin(((W.t / DAY) % 1) * TAU) * 1.6 + 0.35, 0, 1);
     if (W.wind > 0) W.wind -= dt;
-    /* еда понемногу восстанавливается */
     for (const fd of W.foods) if (fd.regen) fd.amt = Math.min(fd.max, fd.amt + dt * fd.regen);
     W.foods = W.foods.filter(fd => fd.amt > 0.3 || fd.regen);
-    /* яйца */
     for (let i = W.eggs.length - 1; i >= 0; i--) { const e = W.eggs[i]; if (W.t < e.t) continue; W.eggs.splice(i, 1); if (e.col.dead) continue;
-      const role = e.role;
-      const f = addFly(role, e.col, e.p); if (f) { e.col.births++; if (role === 'queen') log(`${dot(e.col)} 👑 Колония вырастила новую королеву — ${who(f)}!`); } }
-    /* мухи */
+      const f = addFly(e.role, e.col, e.p, {g:e.g, gen:e.gen}); if (f) { e.col.births++; if (e.role === 'queen') log(`${dot(e.col)} 👑 Колония вырастила новую королеву — ${who(f)}!`); } }
     for (const f of W.flies) {
       if (f.hp <= 0) continue;
       f.age += dt; if (f.age > f.life * (f.trait === 'chosen' ? 1.6 : 1)) { if (f.role === 'queen' || f.trait) log(`${f.col ? dot(f.col) : ''} 🕯 ${who(f)} умерла от старости`); kill(f, null); continue; }
-      if (f.role === 'student') continue;
-      if (!f.landed && !f.tgt && !f.foe && f.stun <= 0) flyTo(f, f.role === 'worker' || f.role === 'queen' ? nestSpot(f.col) : near(f.col.nest, 0.4));   /* после драки — домой */
+      if (f.cd > 0) f.cd -= dt;
+      brainTick(f, dt);
+      if (!f.landed && !f.tgt && !f.foe && f.stun <= 0) flyTo(f, f.role === 'warrior' ? nearOn(f.col.nest, 0.4) : nestSpot(f.col));
       if (f.role === 'worker') worker(f, dt); else if (f.role === 'warrior') warrior(f, dt); else if (f.role === 'queen') queen(f, dt);
       move(f, dt);
     }
-    W.flies = W.flies.filter(f => f.hp > 0 || f.role === 'student');
-    /* паук */
+    if (W.flies.some(f => f.hp <= 0)) W.flies = W.flies.filter(f => f.hp > 0);
+    if (W.follow && W.follow.hp <= 0 && W.follow.role !== 'student') { W.sel = null; W.follow = null; }
     const sp = W.spider;
     if (sp) {
       sp.t -= dt;
       if (sp.hp <= 0 || sp.t <= 0) { if (sp.hp > 0) log('🕷 Паук наелся и уполз'); W.spider = null; spiderObj.visible = false; }
       else {
-        let best = null, bd = 9; for (const f of W.flies) { if (f.hp <= 0 || f.role === 'student') continue; const d = d3(f.p, sp.p); if (d < bd) { bd = d; best = f; } }
-        if (best) { const dx = best.p.x - sp.p.x, dy = best.p.y - sp.p.y, dz = best.p.z - sp.p.z, d = Math.hypot(dx, dy, dz) || 1; const s = Math.min(d, 0.32 * dt); sp.p.x += dx / d * s; sp.p.y += dy / d * s; sp.p.z += dz / d * s; sp.h = Math.atan2(dz, dx);
-          if (d < 0.05) { best.hp -= 8 * dt; if (best.hp <= 0) kill(best, sp); } }
+        let best = null, bd = 9; for (const f of W.flies) { if (f.hp <= 0) continue; const d = d3(f.p, sp.p); if (d < bd) { bd = d; best = f; } }
+        if (best) { const tx = best.landed ? best.p.x : best.p.x, tz = best.p.z, dx = tx - sp.p.x, dz = tz - sp.p.z, d = Math.hypot(dx, dz) || 1, s = Math.min(d, 0.32 * dt);
+          let nx = sp.p.x + dx / d * s, nz = sp.p.z + dz / d * s; if (WD.inObst(nx, 0.03, nz, 0.03) || WD.inPond(nx, nz)) { nx = sp.p.x + dz / d * s; nz = sp.p.z - dx / d * s; }
+          if (!WD.inObst(nx, 0.03, nz, 0.03)) { sp.p.x = nx; sp.p.z = nz; } sp.h = Math.atan2(dz, dx);
+          if (Math.hypot(best.p.x - sp.p.x, best.p.z - sp.p.z) < 0.06 && best.p.y < 0.12) hurt(best, 8 * dt, sp); }
       }
     }
-    /* колонии: набеги, гибель, статистика */
     for (const c of W.cols) {
       if (c.dead) continue;
-      const fl = W.flies.filter(o => o.col === c && o.hp > 0);
-      c.n = fl.length; c.q = fl.filter(o => o.role === 'queen').length; c.wk = fl.filter(o => o.role === 'worker').length; c.wr = fl.filter(o => o.role === 'warrior').length; c.eg = W.eggs.filter(e => e.col === c).length;
+      let n = 0, q = 0, wk = 0, wr = 0; for (const o of W.flies) if (o.col === c) { n++; if (o.role === 'queen') q++; else if (o.role === 'worker') wk++; else wr++; }
+      c.n = n; c.q = q; c.wk = wk; c.wr = wr; c.eg = 0; for (const e of W.eggs) if (e.col === c) c.eg++;
       if (c.n >= 30) ACH.give('sb_colony');
       if (!c.q && c.food < 25 && c.n && !c.warnQ) { c.warnQ = true; log(`${dot(c)} ${c.name} остались без королевы — копят еду, чтобы вырастить новую`); }
       if (c.q) c.warnQ = false;
-      if (!c.q && c.n && c.food >= 25 && !W.eggs.some(e => e.col === c && e.role === 'queen')) { c.food -= 20; W.eggs.push({col:c, p:nestSpot(c), t:W.t + 12, role:'queen'}); log(`${dot(c)} 🥚 ${c.name} выкармливают королевское яйцо`); }
-      if (c.n === 0 && c.eg === 0) {
-        c.dead = true; buildHouse(c); log(`${dot(c)} ☠️ Колония <b>${c.name}</b> погибла${c.lastFoe ? ` — её уничтожили ${c.lastFoe.name}` : ''}`);
-        if (c.lastFoe && !c.lastFoe.dead) ACH.give('sb_war'); sfx('trombone', null, 0.4); continue;
-      }
+      if (!c.q && c.n && c.food >= 25 && !W.eggs.some(e => e.col === c && e.role === 'queen')) { const mom = W.flies.find(o => o.col === c); c.food -= 20; W.eggs.push({col:c, p:nestSpot(c), t:W.t + 12, role:'queen', g:childGenome(mom.g, mom.g), gen:mom.gen + 1}); log(`${dot(c)} 🥚 ${c.name} выкармливают королевское яйцо`); }
+      if (c.n === 0 && c.eg === 0) { c.dead = true; buildHouse(c); log(`${dot(c)} ☠️ Колония <b>${c.name}</b> погибла${c.lastFoe ? ` — её уничтожили ${c.lastFoe.name}` : ''}`); if (c.lastFoe && !c.lastFoe.dead) ACH.give('sb_war'); sfx('trombone', null, 0.4); continue; }
       if (!c.raid && c.wr >= 6 && c.lv >= 2 && Math.random() < dt / 25) { const o = W.cols.filter(x => x !== c && !x.dead); if (o.length) { c.raid = pick(o); c.raidT = 25; log(`${dot(c)} ⚔️ <b>${c.name}</b> пошли в набег на ${c.raid.name}!`); sfx('airhorn', null, 0.25); } }
       if (c.raid && ((c.raidT -= dt) <= 0 || c.raid.dead)) c.raid = null;
       if ((c.histT = (c.histT || 0) - dt) <= 0) { c.histT = 3; c.hist.push(c.n); if (c.hist.length > 90) c.hist.shift(); }
@@ -3633,82 +3691,112 @@ const SB = (() => {
     if (W.exp) EXP.step(dt);
   }
 
-  /* ---------- события ---------- */
+  /* ---------- события (глобальные) ---------- */
+  function addFood(q, amt, regen) { if (W.foods.length >= 290) return false; W.foods.push({p:V(q.p.x, q.p.y, q.p.z), n:q.n, amt, max:amt, regen}); return true; }
   const EVENTS = {
-    rain:{ic:'🍬', n:'Сахарный дождь', run(){ for (let k = 0; k < 10; k++) { let q; for (let j = 0; j < 8; j++) { q = randLand(); if (q.n.y > 0.9) break; } addFood(q, 15, 0); } log('🍬 С неба посыпался сахар!'); }},
+    rain:{ic:'🍬', n:'Сахарный дождь', run(){ for (let k = 0; k < 14; k++) { let q; for (let j = 0; j < 8; j++) { q = randLand(); if (q.n.y > 0.9) break; } addFood(q, 15, 0); } log('🍬 С неба посыпался сахар!'); }},
     wind:{ic:'🌬', n:'Ветер', run(){ W.wind = 15; log('🌬 Поднялся ветер! Летящих мух сносит'); sfx('whoosh', null, 0.8); }},
-    spider:{ic:'🕷', n:'Паук', run(){ const q = randLand(); W.spider = {p:V(q.p.x, q.p.y, q.p.z), hp:30, t:60, h:0}; spiderObj.visible = true; log('🕷 В комнату заполз паук! Воины, к бою!'); sfx('thud', null, 0.6); }},
-    plague:{ic:'☠️', n:'Мор', run(){ let n = 0; for (const f of W.flies) { if (f.hp <= 0 || f.role === 'student' || f.trait === 'chosen') continue; if (Math.random() < 0.22) { kill(f, null); n++; } else f.hp *= R(0.4, 1); } log(`☠️ Мор! Погибло мух: ${n}`); sfx('trombone', null, 0.5); }},
+    spider:{ic:'🕷', n:'Паук', run(){ const q = randLand(); spawnSpider({p:V(q.p.x, 0.002, q.p.z)}); }},
+    plague:{ic:'☠️', n:'Мор', run(){ let n = 0; for (const f of W.flies) { if (f.hp <= 0 || f.trait === 'chosen') continue; if (Math.random() < 0.22) { kill(f, null); n++; } else f.hp *= R(0.4, 1); } log(`☠️ Мор! Погибло мух: ${n}`); sfx('trombone', null, 0.5); }},
     famine:{ic:'🥀', n:'Голод', run(){ for (const fd of W.foods) fd.amt *= 0.25; for (const c of W.cols) c.food *= 0.5; log('🥀 Голод: еды стало вчетверо меньше'); }},
-    boom:{ic:'🎉', n:'Бэби-бум', run(){ for (const f of W.flies) if (f.role === 'queen' && f.hp > 0) for (let k = 0; k < 5; k++) W.eggs.push({col:f.col, p:nestSpot(f.col), t:W.t + R(3, 8), role:Math.random() < 0.3 ? 'warrior' : 'worker'}); log('🎉 Бэби-бум! Королевы отложили кучу яиц'); sfx('fanfare', null, 0.5); }},
+    boom:{ic:'🎉', n:'Бэби-бум', run(){ for (const f of W.flies) if (f.role === 'queen' && f.hp > 0) for (let k = 0; k < 5; k++) W.eggs.push({col:f.col, p:nestSpot(f.col), t:W.t + R(3, 8), role:Math.random() < 0.3 ? 'warrior' : 'worker', g:childGenome(f.g, f.g), gen:f.gen + 1}); log('🎉 Бэби-бум! Королевы отложили кучу яиц'); sfx('fanfare', null, 0.5); }},
+    night:{ic:'🌗', n:'День ↔ ночь', run(){ const ph = (W.t / DAY) % 1; W.t += ((ph < 0.5 ? 0.62 : 1.12) - ph) * DAY; log(W.light < 0.2 ? '☀️ Бог включил утро' : '🌙 Бог включил ночь'); }},
   };
-  function runEvent(k) { EVENTS[k].run(); if (++W.events >= 5) ACH.give('sb_god'); }
-  function addFood(q, amt, regen) { if (W.foods.length >= 78) return; W.foods.push({p:V(q.p.x, q.p.y, q.p.z), n:q.n, amt, max:amt, regen}); }
+  function godAct() { if (++W.events === 5) ACH.give('sb_god'); }
+  function runEvent(k) { EVENTS[k].run(); godAct(); }
+  function spawnSpider(q) { W.spider = {p:V(q.p.x, 0.002, q.p.z), hp:30, t:60, h:0}; spiderObj.visible = true; log('🕷 Во двор пришёл паук! Воины, к бою!'); sfx('thud', null, 0.6); }
 
-  /* ---------- инструменты бога ---------- */
+  /* ---------- СИЛЫ (как в god-симуляторах): выбираешь силу внизу, кликаешь или водишь кистью ---------- */
+  const BRUSH = [0.06, 0.15, 0.35, 0.7, 1.4];
+  const P = {
+    inspect:{ic:'🔍', n:'Смотреть', tab:'power', d:'Клик по мухе или гнезду — подробности. Тяни — двигать карту'},
+    queen:{ic:'👑', n:'Королева', tab:'life', d:'Основать колонию или подселить королеву', team:1},
+    worker:{ic:'🪰', n:'Рабочая', tab:'life', d:'Носит еду домой. Держи кнопку — несколько', team:1, hold:0.25},
+    warrior:{ic:'⚔️', n:'Воин', tab:'life', d:'Охраняет и ходит в набеги. Держи — несколько', team:1, hold:0.25},
+    colony:{ic:'🏠', n:'Колония', tab:'life', d:'Сразу королева, 4 рабочих и 2 воина', team:1},
+    sugar:{ic:'🍬', n:'Сахар', tab:'food', d:'Рисуй кистью', brush:1, hold:0.08},
+    fruit:{ic:'🍎', n:'Фрукт', tab:'food', d:'Большая еда, которая растёт заново'},
+    noFood:{ic:'🧽', n:'Убрать еду', tab:'food', d:'Стирает еду кистью', brush:1, hold:0.05},
+    smart:{ic:'🧠', n:'Умная', tab:'trait', d:'Острый нюх, быстро учится', brush:1, hold:0.05},
+    dumb:{ic:'🤪', n:'Глупая', tab:'trait', d:'Плохо чует, путает дома, летит на фонарь', brush:1, hold:0.05},
+    chosen:{ic:'✨', n:'Избранная', tab:'trait', d:'Золотая: ×3 здоровья, ×2.5 урона', brush:1, hold:0.05},
+    unlucky:{ic:'🌧', n:'Невезучая', tab:'trait', d:'С ней всё время что-то случается', brush:1, hold:0.05},
+    normal:{ic:'🙂', n:'Снять черту', tab:'trait', d:'Обычная муха', brush:1, hold:0.05},
+    bless:{ic:'🙏', n:'Благословить', tab:'power', d:'Лечит мух и кормит гнёзда под кистью', brush:1, hold:0.3},
+    smite:{ic:'👟', n:'Тапок', tab:'power', d:'Прихлопнуть всех под кистью', brush:1, hold:0.35, harm:1},
+    plagueB:{ic:'☠️', n:'Болезнь', tab:'power', d:'Мухи под кистью заболевают', brush:1, hold:0.2, harm:1},
+    spider:{ic:'🕷', n:'Паук', tab:'power', d:'Выпустить паука в точку'},
+    rage:{ic:'😡', n:'Ярость', tab:'power', d:'Колония под кистью идёт в набег', brush:1},
+  };
+  const TABS = [['life', '🪰 Жизнь'], ['food', '🍬 Еда'], ['trait', '🧬 Черты'], ['power', '⚡ Силы'], ['event', '🌦 События'], ['sci', '🔬 Наука'], ['world', '🌍 Мир']];
+  W.tool = 'inspect'; W.tab = 'life'; W.brush = 1;
+  const hand = {on:false, p:V(), r:0.15, harm:false};   /* где сейчас «рука бога» — мухи её видят и боятся тапка */
   const ray = new THREE.Raycaster(), _ndc = new THREE.Vector2();
   function pickAt(x, y) {
     _ndc.set(x / innerWidth * 2 - 1, -(y / innerHeight) * 2 + 1); ray.setFromCamera(_ndc, camera);
-    const o = ray.ray.origin, d = ray.ray.direction, hit = WD.raycast(V(o.x, o.y, o.z), V(d.x, d.y, d.z), 20);
+    const o = ray.ray.origin, d = ray.ray.direction, hit = WD.raycast(V(o.x, o.y, o.z), V(d.x, d.y, d.z), 60);
     let fly = null, ft = 1e9;
-    const list = W.exp ? W.flies.concat(W.exp.studs) : W.flies;
-    for (const f of list) { if (f.hp <= 0 && f.role !== 'student') continue; const rx = f.p.x - o.x, ry = f.p.y - o.y, rz = f.p.z - o.z, t = rx * d.x + ry * d.y + rz * d.z; if (t < 0.05 || (hit && t > hit.t + 0.05)) continue; const pp = Math.hypot(rx - d.x * t, ry - d.y * t, rz - d.z * t); if (pp < Math.max(0.025, t * 0.02) && t < ft) { ft = t; fly = f; } }
+    const list = W.exp && !W.exp.placing ? W.flies.concat(W.exp.studs) : W.flies;
+    for (const f of list) { const rx = f.p.x - o.x, ry = f.p.y - o.y, rz = f.p.z - o.z, t = rx * d.x + ry * d.y + rz * d.z; if (t < 0.05 || (hit && t > hit.t + 0.08)) continue; const pp = Math.hypot(rx - d.x * t, ry - d.y * t, rz - d.z * t); if (pp < Math.max(0.025, t * 0.018) && t < ft) { ft = t; fly = f; } }
     return {hit, fly};
   }
-  function click(x, y) {
-    const {hit, fly} = pickAt(x, y), tool = W.tool, team = W.team;
-    if (W.exp && W.exp.placing) { if (hit && hit.n.y > 0.9) EXP.place(hit); else toast2('Корзину можно поставить только на пол, стол или другую горизонтальную поверхность'); return; }
-    if (['dumb', 'smart', 'chosen', 'unlucky', 'normal'].includes(tool)) {
-      if (!fly) return toast2('Кликни прямо по мухе');
-      if (fly.role === 'student') return EXP.select(fly, tool);
-      if (tool === 'normal') { fly.trait = null; log(`🙂 ${who(fly)} снова обычная`); return; }
-      const was = fly.trait; fly.trait = tool; if (tool === 'chosen' && was !== 'chosen') { fly.maxHp *= 3; fly.hp = fly.maxHp; sfx('fanfare', null, 0.4); } else sfx('ding', null, 0.35);
-      log(`${TRAIT[tool].ic} ${who(fly)} теперь ${TRAIT[tool].n.toLowerCase()}`); W.sel = fly; return;
+  const inBrush = (p, c, r) => Math.hypot(p.x - c.x, p.z - c.z) < r && Math.abs(p.y - c.y) < Math.max(0.3, r);
+  let stroke = null;   /* текущий мазок кистью: кого уже задели */
+  function apply(x, y, first) {
+    const {hit, fly} = pickAt(x, y), t = W.tool, pw = P[t], team = W.team, r = BRUSH[W.brush]; if (!stroke) stroke = new Set();
+    if (W.exp && W.exp.placing) { if (first) { if (hit && hit.n.y > 0.9) EXP.place(hit); else toast2('Корзину ставь на землю или стол'); } return; }
+    if (t === 'inspect') { if (!first) return; if (fly) { W.sel = fly; W.selCol = null; sfx('ding', null, 0.15); } else if (hit) { let bc = null, bd = 0.4; for (const c of W.cols) { const d = d3(c.nest.p, hit.p); if (d < bd) { bd = d; bc = c; } } W.selCol = bc; W.sel = null; } renderSide(true); return; }
+    if (!hit && !(pw.brush && fly)) return;
+    const cp = hit ? hit.p : fly.p, q = hit ? {p:hit.p, n:hit.n} : {p:fly.p, n:V(0, 1, 0)};
+    if (['smart', 'dumb', 'chosen', 'unlucky', 'normal'].includes(t)) {
+      const list = W.exp && !W.exp.placing ? W.flies.concat(W.exp.studs) : W.flies; let n = 0;
+      for (const f of list) { if (stroke.has(f) || !(inBrush(f.p, cp, r) || f === fly)) continue; stroke.add(f);
+        if (f.role === 'student') { EXP.select(f, t); continue; }
+        if (setTrait(f, t === 'normal' ? null : t)) { n++; if (n <= 2) log(t === 'normal' ? `🙂 ${who(f)} снова обычная` : `${TRAIT[t].ic} ${who(f)} теперь ${TRAIT[t].n.toLowerCase()}`); } }
+      if (n) sfx(t === 'chosen' ? 'fanfare' : 'ding', null, 0.3); if (n > 2) log(`…и ещё ${n - 2}`); return;
     }
-    if (tool === 'follow') { followFly(fly || null); return; }
-    if (fly) W.sel = fly;
-    if (tool === 'smite') {
-      if (!hit) return; let n = 0; for (const f of W.flies) if (f.role !== 'student' && f.hp > 0 && d3(f.p, hit.p) < 0.09) { kill(f, null); n++; }
-      if (W.spider && d3(W.spider.p, hit.p) < 0.12) { W.spider.hp = 0; log('👟 Бог прихлопнул паука!'); }
-      sfx('slap', hit.p, 1); sfx('splat', hit.p, 0.6); shakeK = 0.4; smiteFx(hit); if (n) log(`👟 Гнев небес! Прихлопнуто мух: ${n}`); return;
-    }
-    if (tool === 'bless') {
-      if (!hit) return; let best = null, bd = 0.35; for (const c of W.cols) { if (c.dead) continue; const d = d3(c.nest.p, hit.p); if (d < bd) { bd = d; best = c; } }
-      if (!best) return toast2('Кликни по гнезду колонии');
-      best.food += 25; for (const f of W.flies) if (f.col === best) f.hp = f.maxHp; log(`🙏 Бог благословил <b>${best.name}</b>: +25 еды и все здоровы`); sfx('ding', null, 0.5); return;
-    }
+    if (t === 'smite') { let n = 0; for (const f of W.flies) if (inBrush(f.p, cp, r + 0.03)) { kill(f, null); n++; } if (W.spider && inBrush(W.spider.p, cp, r + 0.06)) { W.spider.hp = 0; log('👟 Бог прихлопнул паука!'); }
+      sfx('slap', cp, 1); sfx('splat', cp, 0.6); shakeK = 0.3; ringFx(cp, hit ? hit.n : V(0, 1, 0), r, 0xffe6a0); if (n) { log(`👟 Гнев небес! Прихлопнуто мух: ${n}`); godAct(); } return; }
+    if (t === 'plagueB') { let n = 0; for (const f of W.flies) if (inBrush(f.p, cp, r) && !stroke.has(f)) { stroke.add(f); hurt(f, f.maxHp * R(0.4, 1.1), null); n++; } ringFx(cp, hit ? hit.n : V(0, 1, 0), r, 0x9be36b); if (n && first) { log(`☠️ Болезнь задела мух: ${n}`); godAct(); } return; }
+    if (t === 'bless') { let n = 0; for (const f of W.flies) if (inBrush(f.p, cp, r)) { f.hp = f.maxHp; reward(f, 0.5); n++; } for (const c of W.cols) if (!c.dead && inBrush(c.nest.p, cp, r + 0.1) && !stroke.has(c)) { stroke.add(c); c.food += 25; log(`🙏 Бог благословил <b>${c.name}</b>: +25 еды`); } ringFx(cp, hit ? hit.n : V(0, 1, 0), r, 0xfff3a0); if (first) sfx('ding', null, 0.4); return; }
+    if (t === 'rage') { let bc = null, bd = r + 0.4; for (const c of W.cols) { if (c.dead) continue; const d = d3(c.nest.p, cp); if (d < bd) { bd = d; bc = c; } } if (!bc) return toast2('Наведи кисть на гнездо колонии');
+      const o = W.cols.filter(x => x !== bc && !x.dead); if (!o.length) return toast2('Нападать не на кого'); bc.raid = o.reduce((a, b) => d3(a.nest.p, bc.nest.p) < d3(b.nest.p, bc.nest.p) ? a : b); bc.raidT = 40; log(`${dot(bc)} 😡 Бог разгневал <b>${bc.name}</b> — они идут на ${bc.raid.name}!`); sfx('airhorn', null, 0.3); godAct(); return; }
     if (!hit) return;
-    const q = {p:hit.p, n:hit.n};
-    if (tool === 'food') { addFood(q, 25, 0.05); sfx('step', hit.p, 0.4); return; }
-    let c = colonyOf(team);
-    if (!c) c = newColony(team, q);
-    const f = addFly(tool, c, tool === 'queen' && !colonyOf(team).q ? q : q);
-    if (!f) return toast2('Слишком много мух — мир переполнен');
-    if (tool === 'queen') log(`${dot(c)} 👑 Появилась королева ${who(f)}`);
-    sfx('step', hit.p, 0.3);
-  }
-  const smites = [];
-  function smiteFx(hit) { const m = new THREE.Mesh(new THREE.RingGeometry(0.02, 0.09, 32), new THREE.MeshBasicMaterial({color:0xffe6a0, transparent:true, opacity:0.8, side:THREE.DoubleSide, depthWrite:false})); m.position.set(hit.p.x + hit.n.x * 0.003, hit.p.y + hit.n.y * 0.003, hit.p.z + hit.n.z * 0.003); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(hit.n.x, hit.n.y, hit.n.z)); root.add(m); smites.push({m, t:0}); }
-
-  /* ---------- ЭКСПЕРИМЕНТ: отбор самой умной мухи, которая принесёт мячик ---------- */
-  const EXP = (() => {
-    const NI = 7, NH = 8, NO = 3, NG = NI * NH + NH * NO, POP = 24, GEN_T = 14;
-    const rnd = () => Array.from({length:NG}, () => gauss() * 0.6);
-    const E = {};
-    function brain(g, inp) {
-      const h = new Array(NH); for (let j = 0; j < NH; j++) { let s = 0; for (let i = 0; i < NI; i++) s += g[j * NI + i] * inp[i]; h[j] = Math.tanh(s); }
-      const o = new Array(NO); for (let k = 0; k < NO; k++) { let s = 0; for (let j = 0; j < NH; j++) s += g[NI * NH + k * NH + j] * h[j]; o[k] = Math.tanh(s); } return o;
+    if (t === 'sugar') { const [u, v] = tangent(hit.n); const a = R(-r, r), b = R(-r, r); const p = V(hit.p.x + u.x * a * 0.8 + v.x * b * 0.8, hit.p.y + u.y * a * 0.8 + v.y * b * 0.8, hit.p.z + u.z * a * 0.8 + v.z * b * 0.8); if (!addFood({p, n:hit.n}, 8, 0)) toast2('Еды слишком много'); return; }
+    if (t === 'fruit') { addFood(q, 40, 0.1); sfx('thud', cp, 0.4); return; }
+    if (t === 'noFood') { W.foods = W.foods.filter(fd => !inBrush(fd.p, cp, r)); return; }
+    if (t === 'spider') { spawnSpider(q); godAct(); return; }
+    if (pw.team) {
+      if (!first && !pw.hold) return;
+      let c = colonyOf(team), fresh = false; if (!c) { c = newColony(team, q); fresh = true; }
+      const spots = t === 'colony' ? [['queen', 1], ['worker', 4], ['warrior', 2]] : [[t, 1]];
+      for (const [role, k] of spots) for (let i = 0; i < k; i++) { const f = addFly(role, c, i ? nearOn(q, 0.05) : q); if (!f) return toast2('Мир переполнен — больше мух не поместится'); if (role === 'queen') log(`${dot(c)} 👑 Появилась королева ${who(f)}`); if (!fresh && d3(q.p, c.nest.p) > 1) flyTo(f, role === 'warrior' ? nearOn(c.nest, 0.4) : nestSpot(c)); }
+      if (t === 'colony') c.food += 10;
+      sfx('step', cp, 0.3);
     }
+  }
+  const fxs = [];
+  function ringFx(p, n, r, col) { const m = new THREE.Mesh(new THREE.RingGeometry(Math.max(0.01, r * 0.75), r, 40), new THREE.MeshBasicMaterial({color:col, transparent:true, opacity:0.8, side:THREE.DoubleSide, depthWrite:false})); m.position.set(p.x + n.x * 0.004, p.y + n.y * 0.004, p.z + n.z * 0.004); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(n.x, n.y, n.z)); root.add(m); fxs.push({m, t:0}); }
+  /* кольцо-курсор кисти */
+  const cursor = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 48), new THREE.MeshBasicMaterial({color:0xffffff, transparent:true, opacity:0.75, side:THREE.DoubleSide, depthWrite:false, depthTest:false})); cursor.renderOrder = 10; cursor.visible = false; root.add(cursor);
+  const CUR_COL = {life:0x7ef0a0, food:0xffd23f, trait:0xc9a0ff, power:0xffffff};
+  const selRing = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 32), new THREE.MeshBasicMaterial({color:0xffd23f, transparent:true, opacity:0.9, side:THREE.DoubleSide, depthWrite:false, depthTest:false})); selRing.renderOrder = 11; selRing.visible = false; root.add(selRing);
+
+  /* ---------- ЭКСПЕРИМЕНТ «Принеси мячик» — тоже на коннектоме: отбор по генам мозга ---------- */
+  const EXP = (() => {
+    const POP = 24, GEN_T = 14, E = {}, NEX = 3;
+    /* геном ученицы = коннектом + 3 гена «рефлекса усиков» (сила и знак связи рецепторов запаха с моторными нейронами поворота, тяга вперёд, крен) */
+    const studGenome = () => { const g = founderGenome(), o = new Float32Array(GL + NEX); o.set(g.subarray(0, GL)); for (let k = 0; k < NEX; k++) o[GL + k] = gauss() * 0.8; return o; };
     function start() {
-      W.exp = {placing:true, gen:0, genomes:Array.from({length:POP}, rnd), studs:[], hist:[], best:0, trained:false, show:false, pinned:null};
-      basket.visible = false; log('🎾 Эксперимент: кликни туда, где будешь ты — там встанет корзина'); renderExp();
+      W.exp = {placing:true, gen:0, genomes:Array.from({length:POP}, studGenome), studs:[], hist:[], best:0, trained:false, show:false, pinned:null};
+      basket.visible = false; log('🎾 Эксперимент: кликни туда, где будешь ты — там встанет корзина'); renderExp(); setTab('sci');
     }
     function place(hit) {
-      const s = surfAt(hit.p, hit.n); if (!s) return toast2('Не получилось — попробуй кликнуть по полу или столу');
+      const s = surfAt(hit.p, hit.n); if (!s) return toast2('Не получилось — кликни по земле или столу');
       const x = W.exp; x.placing = false; x.surf = s; x.bp = V(hit.p.x, s.c.y, hit.p.z); basket.position.set(x.bp.x, x.bp.y, x.bp.z); basket.visible = true;
-      x.y = s.c.y + 0.002; newGen(); log('🎾 Поколение 1: мухи пока ничего не умеют. Ускорь время или жми «⏩ Учить»');
+      x.y = s.c.y + 0.002; newGen(); log('🎾 Поколение 1: мухи пока ничего не умеют. Жми «⏩ Учить» или ускорь время');
     }
-    function inRect(x, z, m = 0.02) { const s = W.exp.surf, dx = x - s.c.x, dz = z - s.c.z; return Math.abs(dx * s.u.x + dz * s.u.z) < s.hu - m && Math.abs(dx * s.v.x + dz * s.v.z) < s.hv - m; }
+    function inRect(x, z, m = 0.02) { const s = W.exp.surf, dx = x - s.c.x, dz = z - s.c.z; return Math.abs(dx * s.u.x + dz * s.u.z) < s.hu - m && Math.abs(dx * s.v.x + dz * s.v.z) < s.hv - m && !WD.inPond(x, z); }
     function ballSpot() {
       const x = W.exp;
       for (let k = 0; k < 120; k++) { const a = R(0, TAU), r = R(0.18, 0.6), bx = x.bp.x + Math.cos(a) * r, bz = x.bp.z + Math.sin(a) * r; if (inRect(bx, bz, 0.04) && !WD.inObst(bx, x.y + 0.012, bz, 0.02)) return {x:bx, z:bz}; }
@@ -3716,55 +3804,57 @@ const SB = (() => {
     }
     function newGen() {
       const x = W.exp; x.gen++; x.t = 0; x.spots = Array.from({length:30}, ballSpot);
-      x.studs = (x.show ? [x.champ] : x.genomes).map((g, i) => ({id:9000 + i, role:'student', g, p:V(x.bp.x + R(-0.03, 0.03), x.y, x.bp.z + R(-0.03, 0.03)), n:V(0, 1, 0), v:V(), h:R(0, TAU), landed:true, hp:1, fit:0, del:0, carry:false, bi:0, ball:{...x.spots[0]}, prevD:null, name:'Ученица ' + (i + 1), trait:null, sp:0}));
+      x.studs = (x.show ? [x.champ] : x.genomes).map((g, i) => ({id:9000 + i, role:'student', g, br:new S.Brain(g), p:V(x.bp.x + R(-0.03, 0.03), x.y, x.bp.z + R(-0.03, 0.03)), n:V(0, 1, 0), v:V(), h:R(0, TAU), landed:true, hp:1, maxHp:1, fit:0, del:0, carry:false, bi:0, ball:{...x.spots[0]}, prevD:null, name:'Ученица ' + (i + 1), trait:null, bT:0, o:{jump:0, turn:0, fwd:0, fly:0}, dop:0, pain:0, age:0, kills:0}));
     }
     function stepStud(f, dt) {
       const x = W.exp, b = f.ball, gx = f.carry ? x.bp.x : b.x, gz = f.carry ? x.bp.z : b.z;
-      const dx = gx - f.p.x, dz = gz - f.p.z, d = Math.hypot(dx, dz), a = angDiff(f.h, Math.atan2(dz, dx));
-      const bdx = x.bp.x - f.p.x, bdz = x.bp.z - f.p.z, ab = angDiff(f.h, Math.atan2(bdz, bdx));
-      const o = brain(f.g, [Math.sin(a), Math.cos(a), Math.min(1, d), f.carry ? 1 : -1, Math.sin(ab), Math.cos(ab), 1]);
-      f.h += o[0] * 5 * dt; f.sp = (o[1] + 1) / 2 * 0.4;
+      f.bT += dt;
+      if (f.bT >= 0.1) {   /* мозг: запах цели слева/справа → нейроны поворота и ходьбы */
+        const br = f.br, I = br.inp; I.fill(0);
+        const d = Math.hypot(gx - f.p.x, gz - f.p.z), rel = angDiff(f.h, Math.atan2(gz - f.p.z, gx - f.p.x)), s = clamp(1 - d / 1.2, 0.15, 1), side = Math.sin(rel);
+        I[2] = s * clamp(0.6 - side, 0, 1.2) * br.kSmell; I[3] = s * clamp(0.6 + side, 0, 1.2) * br.kSmell;
+        if (f.carry) I[4] = I[5] = 0.6;
+        I[8] = f.dop * 1.5; br.step(true); f.dop *= 0.8; f.bT = 0;
+        const g = f.g, ant = (I[3] - I[2]) / Math.max(0.05, br.kSmell);   /* рецепторы усиков: правый минус левый */
+        f.o.turn = (br.mean(OUTN.turnR) - br.mean(OUTN.turnL)) * br.kTurn * 0.3 + g[GL] * 3 * ant + g[GL + 2] * 0.3; f.o.fwd = (br.mean(OUTN.fwd) - br.mean(OUTN.back)) * br.kFwd + 0.4 + g[GL + 1] * 0.4;
+      }
+      f.h += clamp(f.o.turn, -2.5, 2.5) * 2.5 * dt; f.sp = clamp(0.08 + 0.3 * f.o.fwd, 0.03, 0.4);
       const nx = f.p.x + Math.cos(f.h) * f.sp * dt, nz = f.p.z + Math.sin(f.h) * f.sp * dt;
-      if (inRect(nx, nz) && !WD.inObst(nx, x.y + 0.008, nz, 0.004)) { f.p.x = nx; f.p.z = nz; }
-      f.landed = f.sp < 0.25;   /* быстро — перепархивает */
+      if (inRect(nx, nz) && !WD.inObst(nx, x.y + 0.008, nz, 0.004)) { f.p.x = nx; f.p.z = nz; } else f.h += R(1.5, 3);
+      f.landed = f.sp < 0.25;
       const nd = Math.hypot((f.carry ? x.bp.x : b.x) - f.p.x, (f.carry ? x.bp.z : b.z) - f.p.z);
       if (f.prevD !== null) f.fit += (f.prevD - nd) * (f.carry ? 1.5 : 1);
       f.prevD = nd;
-      if (!f.carry && o[2] > 0 && nd < 0.03) { f.carry = true; f.fit += 1; f.prevD = null; }
+      if (!f.carry && nd < 0.03) { f.carry = true; f.fit += 1; f.prevD = null; f.dop = 1; f.br.reinforce(0.3); }
       if (f.carry) { b.x = f.p.x + Math.cos(f.h) * 0.016; b.z = f.p.z + Math.sin(f.h) * 0.016; }
       if (f.carry && Math.hypot(b.x - x.bp.x, b.z - x.bp.z) < 0.06) {
-        f.carry = false; f.del++; f.fit += 4 + Math.max(0, 1 - x.t / GEN_T) * 2; f.bi++; Object.assign(b, x.spots[f.bi % x.spots.length]); f.prevD = null;
+        f.carry = false; f.del++; f.fit += 4 + Math.max(0, 1 - x.t / GEN_T) * 2; f.bi++; Object.assign(b, x.spots[f.bi % x.spots.length]); f.prevD = null; f.dop = 1.5; f.br.reinforce(0.5);
         if (x.show) { sfx('ding', null, 0.4); log(`🏆 Чемпионка принесла мячик! (${f.del})`); }
       }
     }
     function endGen() {
       const x = W.exp; if (x.show) { newGen(); return; }
       const st = x.studs.slice().sort((a, b) => b.fit - a.fit), best = st[0];
-      x.best = best.del; x.avg = st.reduce((s, f) => s + f.del, 0) / st.length; x.hist.push({b:best.del, a:x.avg, f:best.fit}); if (x.hist.length > 200) x.hist.shift();
-      x.champ = best.g.slice(); x.champDel = Math.max(x.champDel || 0, best.del);
+      x.best = best.del; x.avg = st.reduce((s, f) => s + f.del, 0) / st.length; x.hist.push({b:best.del, a:x.avg}); if (x.hist.length > 200) x.hist.shift();
+      x.champ = best.g.slice();
       if (!x.trained && best.del >= 3) { x.trained = true; log(`🎾 Поколение ${x.gen}: муха научилась приносить мячик! Лучшая принесла ${best.del} раз`); ACH.give('sb_ball'); sfx('fanfare', null, 0.5); }
-      const mut = g => g.map(w => Math.random() < 0.12 ? w + gauss() * 0.4 : w);
-      const top = st.filter(f => !f.banned).slice(0, Math.ceil(POP / 2)), tour = () => { let b = pick(top); for (let k = 0; k < 2; k++) { const c = pick(top); if (c.fit > b.fit) b = c; } return b.g; };
-      const next = st.slice(0, 3).filter(f => !f.banned).map(f => f.g.slice());
-      if (x.pinned) { next.push(x.pinned.slice()); for (let k = 0; k < 5; k++) next.push(mut(x.pinned)); x.pinned = null; }
-      while (next.length < POP - 2) { const a = tour(), b = tour(); next.push(mut(a.map((w, i) => Math.random() < 0.5 ? w : b[i]))); }
-      while (next.length < POP) next.push(rnd());
+      const top = st.filter(f => !f.banned).slice(0, POP / 2), tour = () => { let b = pick(top); for (let k = 0; k < 2; k++) { const c = pick(top); if (c.fit > b.fit) b = c; } return b.g; };
+      const next = st.filter(f => !f.banned).slice(0, 3).map(f => f.g.slice());
+      if (x.pinned) { next.push(x.pinned.slice()); for (let k = 0; k < 5; k++) { const g = x.pinned.slice(); S.mutate(g, 2); next.push(g); } x.pinned = null; }
+      while (next.length < POP - 2) next.push(childGenome(tour(), tour()));
+      while (next.length < POP) next.push(studGenome());
       x.genomes = next; newGen();
     }
-    E.step = dt => {
-      const x = W.exp; if (!x || x.placing) return;
-      x.t += dt; for (const f of x.studs) stepStud(f, dt);
-      if (x.t >= GEN_T * (x.show ? 3 : 1)) endGen();
-    };
-    E.turbo = n => {   /* «⏩ Учить»: много поколений без отрисовки */
-      const x = W.exp; if (!x || x.placing) return; const t0 = performance.now(); x.show = false;
-      for (let g = 0; g < n && performance.now() - t0 < 4000; g++) { while (x.t < GEN_T) { x.t += DT_S; for (const f of x.studs) stepStud(f, DT_S); } endGen(); }
+    E.step = dt => { const x = W.exp; if (!x || x.placing) return; x.t += dt; for (const f of x.studs) stepStud(f, dt); if (x.t >= GEN_T * (x.show ? 3 : 1)) endGen(); };
+    E.turbo = n => {
+      const x = W.exp; if (!x || x.placing) return; const t0 = performance.now(); if (x.show) { x.show = false; newGen(); }
+      for (let g = 0; g < n && performance.now() - t0 < 5000; g++) { while (x.t < GEN_T) { x.t += DT_S; for (const f of x.studs) stepStud(f, DT_S); } endGen(); }
       renderExp();
     };
     E.select = (f, tool) => {
       const x = W.exp;
       if (tool === 'dumb') { f.banned = true; f.fit = -99; log(`🤪 ${f.name} отбракована — её гены не передадутся`); }
-      else { x.pinned = f.g.slice(); log(`🧬 Ты отобрала ${f.name} как родителя следующего поколения`); sfx('ding', null, 0.4); }
+      else if (tool === 'smart' || tool === 'chosen') { x.pinned = f.g.slice(); log(`🧬 ${f.name} станет родителем следующего поколения`); sfx('ding', null, 0.4); }
     };
     E.show = () => { const x = W.exp; if (!x || !x.champ) return; x.show = !x.show; newGen(); if (x.show) log('🏆 Смотрим лучшую муху: она одна, мячик и ты'); renderExp(); };
     E.stop = () => { W.exp = null; basket.visible = false; renderExp(); };
@@ -3773,9 +3863,9 @@ const SB = (() => {
   })();
 
   /* ---------- отрисовка ---------- */
-  const _m = new THREE.Matrix4(), _l = new THREE.Matrix4(), _q = new THREE.Quaternion(), _qf = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _c = new THREE.Color(), _e = new THREE.Euler();
+  const _m = new THREE.Matrix4(), _l = new THREE.Matrix4(), _q = new THREE.Quaternion(), _qf = new THREE.Quaternion(), _p = new THREE.Vector3(), _s = new THREE.Vector3(), _x = new THREE.Vector3(), _y = new THREE.Vector3(), _z = new THREE.Vector3(), _e = new THREE.Euler();
   const WR = [new THREE.Vector3(0.0004, 0.0036, 0.0007), new THREE.Vector3(0.0004, 0.0036, -0.0007)], _one = new THREE.Vector3(1, 1, 1), _mw = new THREE.Matrix4();
-  const GOLD = new THREE.Color(1.6, 1.2, 0.35), GREY = new THREE.Color(0.55, 0.6, 0.75), PINK = new THREE.Color(1.25, 0.85, 0.85), WHITE = new THREE.Color(1, 1, 1), YEL = new THREE.Color(1, 0.85, 0.2);
+  const GOLD = new THREE.Color(1.6, 1.2, 0.35), GREY = new THREE.Color(0.55, 0.6, 0.75), PINK = new THREE.Color(1.25, 0.85, 0.85), DUMBC = new THREE.Color(0.85, 1.15, 0.8), WHITE = new THREE.Color(1, 1, 1), YEL = new THREE.Color(1, 0.85, 0.2);
   function flyMatrix(f, sc) {
     if (f.landed || f.role === 'student') { _y.set(f.n.x, f.n.y, f.n.z); _x.set(Math.cos(f.h), 0, Math.sin(f.h)); _x.addScaledVector(_y, -_x.dot(_y)); if (_x.lengthSq() < 1e-5) _x.set(0, 0, 1).addScaledVector(_y, -_y.z); _x.normalize(); }
     else { _x.set(f.v.x, f.v.y * 0.5, f.v.z); if (_x.lengthSq() < 1e-6) _x.set(Math.cos(f.h), 0, Math.sin(f.h)); _x.normalize(); _y.set(0, 1, 0).addScaledVector(_x, -_x.y).normalize(); }
@@ -3783,195 +3873,269 @@ const SB = (() => {
     _p.set(f.p.x, f.p.y, f.p.z); _s.setScalar(sc); _m.compose(_p, _q, _s); return _m;
   }
   function render(dt) {
-    const now = performance.now() / 1000;
+    const now = performance.now() / 1000, cp = camera.position;
     let i = 0, ms = 0, mw = 0, mq = 0, cr = 0;
     const list = W.exp && !W.exp.placing ? W.flies.concat(W.exp.studs) : W.flies;
     for (const f of list) {
       if (i >= MAXF) break;
-      const rs = f.role === 'queen' ? 1.55 : f.role === 'warrior' ? 1.2 : 1, sc = K * rs, M = flyMatrix(f, sc);
-      bodyM.setMatrixAt(i, M); bodyM.setColorAt(i, f.trait === 'chosen' ? GOLD : f.trait === 'unlucky' ? GREY : f.trait === 'smart' ? PINK : WHITE);
-      const fly = !f.landed || f.st === 'fight';
-      for (let w = 0; w < 2; w++) { const s = w ? -1 : 1; if (fly) { const a = Math.floor(now * 140 + f.id) % 2 ? 1.0 : -0.4; _e.set(s * a, s * 0.25, 0); } else _e.set(s * 0.05, s * 0.55, 0); _qf.setFromEuler(_e); _l.compose(WR[w], _qf, _one); _mw.multiplyMatrices(M, _l); wingM[w].setMatrixAt(i, _mw); }
-      /* значок над мухой: шарик — рабочая, ромб — воин, корона — королева */
-      /* издалека значки крупнее — чтобы колонии читались с высоты */
-      const cp = camera.position, mk = clamp(Math.hypot(cp.x - f.p.x, cp.y - f.p.y, cp.z - f.p.z) * 0.9, 1, 7);
-      const hy = 0.0125 * K * rs + 0.004 * (mk - 1); _p.set(f.p.x, f.p.y + hy, f.p.z); _s.setScalar(mk); _q.identity(); _m.compose(_p, _q, _s);
-      const col = f.role === 'student' ? YEL : f.col ? f.col.color : WHITE;
+      const rs = f.role === 'queen' ? 1.55 : f.role === 'warrior' ? 1.2 : 1, M = flyMatrix(f, K * rs);
+      bodyM.setMatrixAt(i, M); bodyM.setColorAt(i, f.trait === 'chosen' ? GOLD : f.trait === 'unlucky' ? GREY : f.trait === 'smart' ? PINK : f.trait === 'dumb' ? DUMBC : WHITE);
+      const fl = !f.landed || f.st === 'fight';
+      for (let w = 0; w < 2; w++) { const s = w ? -1 : 1; if (fl) { const a = Math.floor(now * 140 + f.id) % 2 ? 1.0 : -0.4; _e.set(s * a, s * 0.25, 0); } else _e.set(s * 0.05, s * 0.55, 0); _qf.setFromEuler(_e); _l.compose(WR[w], _qf, _one); _mw.multiplyMatrices(M, _l); wingM[w].setMatrixAt(i, _mw); }
+      /* значки: шарик — рабочая, ромб — воин, корона — королева; издалека крупнее */
+      const mk = clamp(Math.hypot(cp.x - f.p.x, cp.y - f.p.y, cp.z - f.p.z) * 0.9, 1, 7), hy = 0.0125 * K * rs + 0.004 * (mk - 1);
+      _p.set(f.p.x, f.p.y + hy, f.p.z); _s.setScalar(mk); const col = f.role === 'student' ? YEL : f.col ? f.col.color : WHITE;
       if (f.role === 'queen' && mq < 40) { _q.setFromEuler(_e.set(0, now * 2, 0)); _m.compose(_p, _q, _s); markQ.setMatrixAt(mq++, _m); }
       else if (f.role === 'warrior') { _q.setFromEuler(_e.set(0, now * 3 + f.id, 0)); _m.compose(_p, _q, _s); markW.setMatrixAt(mw, _m); markW.setColorAt(mw++, col); }
-      else { markS.setMatrixAt(ms, _m); markS.setColorAt(ms++, col); }
+      else { _q.identity(); _m.compose(_p, _q, _s); markS.setMatrixAt(ms, _m); markS.setColorAt(ms++, col); }
       if (f.carry) { _p.set(f.p.x, f.p.y - 0.004, f.p.z); _m.compose(_p, _q.identity(), _s.setScalar(1)); carryM.setMatrixAt(cr++, _m); }
       i++;
     }
     bodyM.count = wingM[0].count = wingM[1].count = i; markS.count = ms; markW.count = mw; markQ.count = mq; carryM.count = cr;
     let k = 0; for (const e of W.eggs) { if (k >= 300) break; _p.set(e.p.p.x, e.p.p.y + 0.003, e.p.p.z); _m.compose(_p, _q.identity(), _s.setScalar(1 + 0.08 * Math.sin(now * 3 + k))); eggM.setMatrixAt(k++, _m); } eggM.count = k;
-    k = 0; for (const fd of W.foods) { const s = 0.006 + Math.cbrt(Math.max(0.1, fd.amt)) * 0.006; _p.set(fd.p.x + fd.n.x * s * 0.5, fd.p.y + fd.n.y * s * 0.5, fd.p.z + fd.n.z * s * 0.5); _m.compose(_p, _q.setFromAxisAngle(_y.set(0, 1, 0), k * 1.3), _s.set(s * 1.4, s, s * 1.4)); foodM.setMatrixAt(k++, _m); } foodM.count = k;
+    k = 0; for (const fd of W.foods) { if (k >= 300) break; const s = 0.006 + Math.cbrt(Math.max(0.1, fd.amt)) * 0.006; _p.set(fd.p.x + fd.n.x * s * 0.5, fd.p.y + fd.n.y * s * 0.5, fd.p.z + fd.n.z * s * 0.5); _q.setFromUnitVectors(_y.set(0, 1, 0), _z.set(fd.n.x, fd.n.y, fd.n.z)); _m.compose(_p, _q, _s.set(s * 1.4, s, s * 1.4)); foodM.setMatrixAt(k++, _m); } foodM.count = k;
     k = 0; for (const c of W.corpses) { _p.set(c.p.x, c.p.y + 0.001, c.p.z); _q.setFromUnitVectors(_y.set(0, 1, 0), _z.set(c.n.x, c.n.y, c.n.z)); _m.compose(_p, _q, _s.setScalar(1)); corpseM.setMatrixAt(k++, _m); } corpseM.count = k;
     k = 0; if (W.exp && !W.exp.placing) for (const f of W.exp.studs) { if (k >= 40) break; _p.set(f.ball.x, W.exp.y + 0.012, f.ball.z); _m.compose(_p, _q.identity(), _s.setScalar(1)); ballM.setMatrixAt(k++, _m); } ballM.count = k;
     for (const m of [bodyM, ...wingM, markS, markW, markQ, carryM, eggM, foodM, corpseM, ballM]) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; }
     if (W.spider) { const s = W.spider; spiderObj.position.set(s.p.x, s.p.y, s.p.z); spiderObj.rotation.set(0, -s.h, 0); for (const l of spiderObj.userData.legs) l.piv.rotation.z = (l.k - 1.5) * 0.35 + Math.sin(now * 14 + l.k * 1.7 + (l.s > 0 ? 0 : Math.PI)) * 0.25; }
-    for (let j = smites.length - 1; j >= 0; j--) { const s = smites[j]; s.t += dt; s.m.scale.setScalar(1 + s.t * 4); s.m.material.opacity = 0.8 * (1 - s.t / 0.5); if (s.t > 0.5) { root.remove(s.m); smites.splice(j, 1); } }
-    /* день и ночь */
+    for (let j = fxs.length - 1; j >= 0; j--) { const s = fxs[j]; s.t += dt; s.m.scale.setScalar(1 + s.t * 1.5); s.m.material.opacity = 0.8 * (1 - s.t / 0.5); if (s.t > 0.5) { root.remove(s.m); s.m.geometry.dispose(); s.m.material.dispose(); fxs.splice(j, 1); } }
+    /* курсор кисти и кольцо выбранной */
+    const pw = P[W.tool], showCur = hand.on && !cam.drag2 && W.tool !== 'inspect' && !(W.exp && W.exp.placing);
+    cursor.visible = showCur;
+    if (showCur) { const r = pw.brush ? BRUSH[W.brush] : 0.05, n = hand.n || V(0, 1, 0); cursor.position.set(hand.p.x + n.x * 0.004, hand.p.y + n.y * 0.004, hand.p.z + n.z * 0.004); cursor.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(n.x, n.y, n.z)); cursor.scale.setScalar(r); cursor.material.color.setHex(pw.harm ? 0xff6b6b : CUR_COL[pw.tab] || 0xffffff); }
+    const sf = W.sel && (W.sel.hp > 0 || W.sel.role === 'student') ? W.sel : null; selRing.visible = !!sf || !!(W.selCol && !W.selCol.dead);
+    if (sf) { const s = clamp(d3(sf.p, cp) * 0.03, 0.012, 0.4); selRing.position.set(sf.p.x, sf.p.y + 0.002, sf.p.z); selRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)); selRing.scale.setScalar(s); }
+    else if (W.selCol && !W.selCol.dead) { const c = W.selCol; selRing.position.set(c.nest.p.x, c.nest.p.y + 0.003, c.nest.p.z); selRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 1, 0)); selRing.scale.setScalar(0.25); }
     WD.setLight(W.light, (W.t / DAY) % 1);
   }
 
-  /* ---------- камера ---------- */
-  /* три режима: орбита вокруг точки, свободный полёт, слежка за мухой (орбита вокруг неё) */
-  const cam = {mode:'orbit', yaw:0.9, pitch:0.75, dist:10, tgt:V(0, 0.4, 0), pos:V(6, 3, 6), fy:0, fp:0, fs:2, drag:0, lx:0, ly:0, sx:0, sy:0, t0:0, moved:false};
+  /* ---------- КАМЕРА god-sim: тянешь карту, колесо — зум к курсору, ПКМ — повернуть ---------- */
+  const cam = {yaw:0.9, pitch:0.95, dist:13, tgt:V(0, 0, 0), drag:0, drag2:false, lx:0, ly:0, sx:0, sy:0, moved:false, holdT:0, mx:0, my:0};
   const following = () => W.follow && (W.follow.hp > 0 || W.follow.role === 'student');
-  function setCam(m) {
-    if (m === 'free' && cam.mode !== 'free') { const p = camera.position; cam.pos = V(p.x, p.y, p.z); camera.getWorldDirection(_fw); cam.fy = Math.atan2(_fw.z, _fw.x); cam.fp = Math.asin(clamp(_fw.y, -1, 1)); W.follow = null; }
-    if (m === 'orbit' && cam.mode === 'free') { const dx = Math.cos(cam.fp) * Math.cos(cam.fy), dy = Math.sin(cam.fp), dz = Math.cos(cam.fp) * Math.sin(cam.fy); cam.dist = 2.5; cam.tgt = V(cam.pos.x + dx * 2.5, Math.max(0.05, cam.pos.y + dy * 2.5), cam.pos.z + dz * 2.5); cam.yaw = Math.atan2(-dz, -dx); cam.pitch = clamp(Math.asin(clamp(-dy, -1, 1)), -0.2, 1.5); }
-    cam.mode = m; renderCam();
-  }
-  function followFly(f) { if (!f) { W.follow = null; renderCam(); return; } if (cam.mode === 'free') setCam('orbit'); W.follow = f; cam.dist = Math.min(cam.dist, 0.35); renderCam(); }
+  function followFly(f) { W.follow = f || null; if (f) { W.sel = f; cam.dist = Math.min(cam.dist, 0.5); } renderSide(true); }
   function nextFly(dir = 1) {
-    const list = (W.exp && !W.exp.placing ? W.flies.concat(W.exp.studs) : W.flies).filter(f => f.hp > 0 || f.role === 'student'); if (!list.length) return toast2('Пока некого смотреть — создай мух');
-    const i = list.indexOf(W.follow); followFly(list[(i + dir + list.length) % list.length]);
+    const list = (W.exp && !W.exp.placing ? W.flies.concat(W.exp.studs) : W.flies); if (!list.length) return toast2('Пока некого смотреть — создай мух');
+    const cur = W.follow || W.sel, i = list.indexOf(cur); followFly(list[(i + dir + list.length) % list.length]);
+  }
+  function panBy(dx, dy) {   /* сдвиг карты пикселями — с учётом высоты камеры */
+    const s = cam.dist * 0.0012, sy = Math.sin(cam.yaw), cy = Math.cos(cam.yaw);
+    cam.tgt.x += (sy * dx - cy * dy) * s; cam.tgt.z += (-cy * dx - sy * dy) * s; if (W.follow) { W.follow = null; renderSide(true); }
   }
   function camFrame(dt) {
-    const fast = keys.ShiftLeft || keys.ShiftRight ? 3.5 : 1;
-    if (cam.mode === 'free' && !following()) {
-      const dx = Math.cos(cam.fp) * Math.cos(cam.fy), dy = Math.sin(cam.fp), dz = Math.cos(cam.fp) * Math.sin(cam.fy), rx = -Math.sin(cam.fy), rz = Math.cos(cam.fy), v = cam.fs * fast * dt, P = cam.pos;
-      if (keys.KeyW || keys.ArrowUp) { P.x += dx * v; P.y += dy * v; P.z += dz * v; } if (keys.KeyS || keys.ArrowDown) { P.x -= dx * v; P.y -= dy * v; P.z -= dz * v; }
-      if (keys.KeyD || keys.ArrowRight) { P.x += rx * v; P.z += rz * v; } if (keys.KeyA || keys.ArrowLeft) { P.x -= rx * v; P.z -= rz * v; }
-      if (keys.KeyE) P.y += v; if (keys.KeyQ || keys.KeyC) P.y -= v;
-      P.x = clamp(P.x, -14, 14); P.y = clamp(P.y, 0.02, 12); P.z = clamp(P.z, -10, 12);
-      camera.position.set(P.x, P.y, P.z); camera.lookAt(P.x + dx, P.y + dy, P.z + dz);
-    } else {
-      if (following()) { const f = W.follow, k = Math.min(1, dt * 5); cam.tgt.x = lerp(cam.tgt.x, f.p.x, k); cam.tgt.y = lerp(cam.tgt.y, f.p.y, k); cam.tgt.z = lerp(cam.tgt.z, f.p.z, k); }
-      else if (W.follow) { W.follow = null; renderCam(); }
-      const mv = dt * 1.5 * fast * Math.max(0.5, cam.dist / 2), fx = -Math.cos(cam.yaw), fz = -Math.sin(cam.yaw);
-      const mvK = keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.KeyA || keys.ArrowLeft || keys.KeyD || keys.ArrowRight; if (mvK && W.follow) { W.follow = null; renderCam(); }
-      if (keys.KeyW || keys.ArrowUp) { cam.tgt.x += fx * mv; cam.tgt.z += fz * mv; } if (keys.KeyS || keys.ArrowDown) { cam.tgt.x -= fx * mv; cam.tgt.z -= fz * mv; }
-      if (keys.KeyA || keys.ArrowLeft) { cam.tgt.x += fz * mv; cam.tgt.z -= fx * mv; } if (keys.KeyD || keys.ArrowRight) { cam.tgt.x -= fz * mv; cam.tgt.z += fx * mv; }
-      if (keys.KeyQ) cam.tgt.y = Math.max(0.02, cam.tgt.y - mv); if (keys.KeyE) cam.tgt.y = Math.min(6, cam.tgt.y + mv);
-      cam.tgt.x = clamp(cam.tgt.x, -9.5, 9.5); cam.tgt.z = clamp(cam.tgt.z, -6.5, 6.5);
-      const d = cam.dist, cx = cam.tgt.x + Math.cos(cam.yaw) * Math.cos(cam.pitch) * d, cy = cam.tgt.y + Math.sin(cam.pitch) * d, cz = cam.tgt.z + Math.sin(cam.yaw) * Math.cos(cam.pitch) * d;
-      camera.position.set(clamp(cx, -16, 16), clamp(cy, 0.02, 14), clamp(cz, -10, 16)); camera.lookAt(cam.tgt.x, cam.tgt.y, cam.tgt.z);
-    }
+    if (following()) { const f = W.follow, k = Math.min(1, dt * 5); cam.tgt.x = lerp(cam.tgt.x, f.p.x, k); cam.tgt.y = lerp(cam.tgt.y, f.p.y, k); cam.tgt.z = lerp(cam.tgt.z, f.p.z, k); }
+    else { cam.tgt.y = lerp(cam.tgt.y, 0, Math.min(1, dt * 3)); }
+    const fast = keys.ShiftLeft || keys.ShiftRight ? 2.5 : 1, mv = 600 * dt * fast;
+    if (keys.KeyW || keys.ArrowUp) panBy(0, -mv); if (keys.KeyS || keys.ArrowDown) panBy(0, mv); if (keys.KeyA || keys.ArrowLeft) panBy(-mv, 0); if (keys.KeyD || keys.ArrowRight) panBy(mv, 0);
+    if (keys.KeyQ) cam.yaw -= dt * 1.5; if (keys.KeyE) cam.yaw += dt * 1.5;
+    if (keys.Equal || keys.NumpadAdd) cam.dist = Math.max(0.12, cam.dist * Math.exp(-dt * 2)); if (keys.Minus || keys.NumpadSubtract) cam.dist = Math.min(20, cam.dist * Math.exp(dt * 2));
+    cam.tgt.x = clamp(cam.tgt.x, -9.5, 9.5); cam.tgt.z = clamp(cam.tgt.z, -6.5, 6.5);
+    const d = cam.dist, pitch = clamp(cam.pitch, 0.25, 1.48);
+    let cx = cam.tgt.x + Math.cos(cam.yaw) * Math.cos(pitch) * d, cy = cam.tgt.y + Math.sin(pitch) * d, cz = cam.tgt.z + Math.sin(cam.yaw) * Math.cos(pitch) * d;
+    if (cy < 0.03) cy = 0.03;
+    camera.position.set(cx, cy, cz); camera.lookAt(cam.tgt.x, cam.tgt.y, cam.tgt.z);
     camera.getWorldDirection(_fw); updateListener();
+    /* «удержание» кисти: сила работает, пока кнопка зажата */
+    if (cam.drag === 1 && cam.paint) { const pw = P[W.tool]; if (pw.hold) { cam.holdT -= dt; if (cam.holdT <= 0) { cam.holdT = pw.hold; apply(cam.mx, cam.my, false); } } }
   }
+  function updateHand(x, y) { const {hit} = pickAt(x, y); hand.on = !!hit; if (hit) { hand.p = hit.p; hand.n = hit.n; } hand.r = P[W.tool].brush ? BRUSH[W.brush] : 0.05; hand.harm = !!P[W.tool].harm; }
   function mouse(e) {
-    if (e.type === 'mousedown') { cam.drag = e.button === 2 || e.shiftKey ? 2 : 1; cam.lx = cam.sx = e.clientX; cam.ly = cam.sy = e.clientY; cam.t0 = performance.now(); cam.moved = false; }
-    else if (e.type === 'mousemove' && cam.drag) {
-      const dx = e.clientX - cam.lx, dy = e.clientY - cam.ly; cam.lx = e.clientX; cam.ly = e.clientY;
-      if (Math.hypot(e.clientX - cam.sx, e.clientY - cam.sy) > 6) cam.moved = true;
-      if (cam.mode === 'free' && !following()) { cam.fy += dx * 0.004; cam.fp = clamp(cam.fp - dy * 0.004, -1.5, 1.5); }
-      else if (cam.drag === 1) { cam.yaw += dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.005, -0.2, 1.5); }
-      else { const s = cam.dist * 0.0016; cam.tgt.x += (Math.sin(cam.yaw) * dx - Math.cos(cam.yaw) * dy) * s; cam.tgt.z += (-Math.cos(cam.yaw) * dx - Math.sin(cam.yaw) * dy) * s; if (W.follow) { W.follow = null; renderCam(); } }
+    if (e.type === 'mousedown') {
+      if (e.target !== $('#cv')) return;
+      cam.mx = cam.sx = cam.lx = e.clientX; cam.my = cam.sy = cam.ly = e.clientY; cam.moved = false;
+      cam.drag = e.button === 2 ? 2 : e.button === 1 ? 3 : 1;
+      cam.paint = cam.drag === 1 && W.tool !== 'inspect' && !(W.exp && W.exp.placing);
+      if (cam.paint) { stroke = new Set(); cam.holdT = P[W.tool].hold || 0; apply(e.clientX, e.clientY, true); }
     }
-    else if (e.type === 'mouseup' && cam.drag) { const was = cam.drag; cam.drag = 0; if (!cam.moved && was === 1 && e.target === $('#cv')) click(e.clientX, e.clientY); }
+    else if (e.type === 'mousemove') {
+      cam.mx = e.clientX; cam.my = e.clientY; updateHand(e.clientX, e.clientY);
+      if (!cam.drag) return;
+      const dx = e.clientX - cam.lx, dy = e.clientY - cam.ly; cam.lx = e.clientX; cam.ly = e.clientY;
+      if (Math.hypot(e.clientX - cam.sx, e.clientY - cam.sy) > 5) cam.moved = true;
+      if (cam.drag === 2) { cam.yaw += dx * 0.006; cam.pitch = clamp(cam.pitch + dy * 0.005, 0.25, 1.48); cam.drag2 = true; }
+      else if (cam.drag === 3 || !cam.paint) panBy(-dx, -dy);
+      else if (cam.paint && P[W.tool].brush) { if (!P[W.tool].hold) apply(e.clientX, e.clientY, false); }
+    }
+    else if (e.type === 'mouseup' && cam.drag) {
+      const was = cam.drag; cam.drag = 0; cam.drag2 = false;
+      if (was === 1 && !cam.paint && !cam.moved && e.target === $('#cv')) apply(e.clientX, e.clientY, true);
+      cam.paint = false; stroke = null;
+    }
   }
-  function wheel(e) { if (cam.mode === 'free' && !following()) { cam.fs = clamp(cam.fs * Math.exp(-e.deltaY * 0.0015), 0.1, 12); toast2(`Скорость полёта: ${cam.fs.toFixed(1)} м/с`); } else cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.0012), 0.08, 16); }
-  let tp = null;
-  $('#cv').addEventListener('pointerdown', e => { if (G.mode === 'sb' && e.pointerType !== 'mouse') tp = {x:e.clientX, y:e.clientY, sx:e.clientX, sy:e.clientY, t:performance.now(), moved:false}; });
-  addEventListener('pointermove', e => { if (G.mode !== 'sb' || !tp || e.pointerType === 'mouse') return; if (cam.mode === 'free' && !following()) { cam.fy += (e.clientX - tp.x) * 0.005; cam.fp = clamp(cam.fp - (e.clientY - tp.y) * 0.005, -1.5, 1.5); } else { cam.yaw += (e.clientX - tp.x) * 0.008; cam.pitch = clamp(cam.pitch + (e.clientY - tp.y) * 0.006, -0.2, 1.5); } tp.x = e.clientX; tp.y = e.clientY; if (Math.hypot(e.clientX - tp.sx, e.clientY - tp.sy) > 10) tp.moved = true; });
-  addEventListener('pointerup', e => { if (G.mode === 'sb' && tp && e.pointerType !== 'mouse' && !tp.moved) click(e.clientX, e.clientY); tp = null; });
+  function wheel(e) {   /* зум к точке под курсором */
+    const k = Math.exp(e.deltaY * 0.0013), nd = clamp(cam.dist * k, 0.12, 20), {hit} = pickAt(e.clientX, e.clientY);
+    if (hit && !following()) { const f = 1 - nd / cam.dist; cam.tgt.x += (hit.p.x - cam.tgt.x) * f; cam.tgt.z += (hit.p.z - cam.tgt.z) * f; }
+    cam.dist = nd;
+  }
+  /* сенсорный экран: один палец — карта/кисть, два — зум и поворот */
+  const tps = new Map(); let pinch = null;
+  $('#cv').addEventListener('pointerdown', e => { if (G.mode !== 'sb' || e.pointerType === 'mouse') return; tps.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if (tps.size === 1) { cam.sx = cam.lx = cam.mx = e.clientX; cam.sy = cam.ly = cam.my = e.clientY; cam.moved = false; cam.drag = 1; cam.paint = W.tool !== 'inspect' && !(W.exp && W.exp.placing); if (cam.paint) { stroke = new Set(); cam.holdT = P[W.tool].hold || 0; updateHand(e.clientX, e.clientY); apply(e.clientX, e.clientY, true); } }
+    else if (tps.size === 2) { const [a, b] = [...tps.values()]; pinch = {d:Math.hypot(a.x - b.x, a.y - b.y), ang:Math.atan2(b.y - a.y, b.x - a.x), dist:cam.dist, yaw:cam.yaw}; cam.drag = 0; cam.paint = false; } });
+  addEventListener('pointermove', e => { if (G.mode !== 'sb' || e.pointerType === 'mouse' || !tps.has(e.pointerId)) return; tps.set(e.pointerId, {x:e.clientX, y:e.clientY});
+    if (pinch && tps.size >= 2) { const [a, b] = [...tps.values()]; cam.dist = clamp(pinch.dist * pinch.d / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), 0.12, 20); cam.yaw = pinch.yaw - (Math.atan2(b.y - a.y, b.x - a.x) - pinch.ang); return; }
+    if (cam.drag !== 1) return; const dx = e.clientX - cam.lx, dy = e.clientY - cam.ly; cam.lx = cam.mx = e.clientX; cam.ly = cam.my = e.clientY; if (Math.hypot(e.clientX - cam.sx, e.clientY - cam.sy) > 10) cam.moved = true;
+    if (cam.paint) { updateHand(e.clientX, e.clientY); if (P[W.tool].brush && !P[W.tool].hold) apply(e.clientX, e.clientY, false); } else panBy(-dx, -dy); });
+  const tpEnd = e => { if (G.mode !== 'sb' || e.pointerType === 'mouse' || !tps.has(e.pointerId)) return; tps.delete(e.pointerId);
+    if (tps.size < 2) pinch = null; if (tps.size === 0) { if (cam.drag === 1 && !cam.paint && !cam.moved) apply(e.clientX, e.clientY, true); cam.drag = 0; cam.paint = false; stroke = null; hand.on = false; } };
+  addEventListener('pointerup', tpEnd); addEventListener('pointercancel', tpEnd);
   $('#cv').addEventListener('contextmenu', e => { if (G.mode === 'sb') e.preventDefault(); });
+  addEventListener('blur', () => { if (G.mode === 'sb') { for (const k in keys) keys[k] = false; cam.drag = 0; cam.paint = false; } });
 
   /* ---------- интерфейс ---------- */
   const css = document.createElement('style'); css.textContent = `
-#sbUI{position:fixed;inset:0;pointer-events:none;font-size:13px}
-#sbUI .glass{pointer-events:auto}
-#sbTools{position:absolute;left:12px;top:12px;bottom:12px;width:178px;padding:10px;overflow:auto;display:flex;flex-direction:column;gap:4px}
-#sbTools h4{margin:8px 0 2px;font-size:11px;letter-spacing:1px;color:var(--mute);text-transform:uppercase;font-weight:700}
-#sbTools h4:first-child{margin-top:0}
-.sbt{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:10px;border:1px solid transparent;background:rgba(255,255,255,.04);color:var(--fg);cursor:pointer;font:inherit;text-align:left}
-.sbt:hover{background:rgba(255,255,255,.09)}.sbt.on{border-color:var(--acc);background:rgba(255,201,74,.13)}
-.sbt .e{width:20px;text-align:center;font-size:16px}
-.sbteams{display:grid;grid-template-columns:repeat(4,1fr);gap:4px}.sbteams button{height:28px;border-radius:8px;border:2px solid transparent;cursor:pointer}.sbteams button.on{border-color:#fff}
-#sbTop{position:absolute;left:50%;top:12px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;padding:6px 10px}
-#sbClock{font-weight:700;min-width:118px;text-align:center}
-#sbSide{position:absolute;right:12px;top:12px;width:270px;padding:10px 12px;max-height:calc(100% - 24px);overflow:auto}
-.sbcol{padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08)}.sbcol:last-of-type{border:0}
-.sbcol .h{display:flex;justify-content:space-between;font-weight:700}.sbcol .s{color:var(--dim);font-size:12px;margin-top:2px}
-.sbcol.dead{opacity:.45}
-#sbLog{margin-top:8px;font-size:12px;line-height:1.45;color:var(--dim)}#sbLog div{margin:2px 0}#sbLog i,.sbcol i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px}#sbLog .t{color:var(--mute);font-size:10px}
-#sbEv{position:absolute;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:6px;padding:6px;flex-wrap:wrap;justify-content:center;max-width:calc(100% - 420px)}
-#sbEv .btn{padding:7px 10px;font-size:13px}
-#sbCard{position:absolute;left:202px;top:12px;padding:10px 12px;width:230px}
-#sbExp{position:absolute;left:50%;top:62px;transform:translateX(-50%);padding:10px 12px;width:360px;text-align:center}
+#sbUI{position:fixed;inset:0;pointer-events:none;font-size:13px;user-select:none}
+#sbUI .glass,#sbUI button{pointer-events:auto}
+#sbBar{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);width:min(860px,calc(100% - 20px));padding:6px 8px 8px}
+#sbTabs{display:flex;gap:4px;overflow-x:auto;scrollbar-width:none}#sbTabs::-webkit-scrollbar{display:none}
+#sbTabs button{flex:0 0 auto;border:0;background:transparent;color:var(--dim);font:inherit;font-weight:600;padding:5px 10px;border-radius:9px;cursor:pointer}
+#sbTabs button.on{background:rgba(255,255,255,.12);color:var(--fg)}
+#sbPow{display:flex;gap:6px;align-items:stretch;margin-top:6px;overflow-x:auto;scrollbar-width:thin;min-height:62px}
+.pw{flex:0 0 auto;width:66px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;padding:6px 2px;border-radius:12px;border:2px solid transparent;background:rgba(255,255,255,.06);color:var(--fg);cursor:pointer;font:inherit;font-size:11px;line-height:1.1;text-align:center}
+.pw .e{font-size:22px;line-height:1}.pw:hover{background:rgba(255,255,255,.12)}.pw.on{border-color:var(--acc);background:rgba(255,201,74,.16)}
+.pw.wide{width:auto;padding:6px 12px;flex-direction:row;font-size:13px;gap:6px}
+.sbteam{display:flex;flex-direction:column;gap:4px;justify-content:center;padding-right:6px;border-right:1px solid rgba(255,255,255,.1)}
+.sbteam div{display:grid;grid-template-columns:repeat(2,22px);gap:4px}.sbteam button{width:22px;height:22px;border-radius:7px;border:2px solid transparent;cursor:pointer}.sbteam button.on{border-color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.4)}
+#sbInfo{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:6px;font-size:12px;color:var(--dim);min-height:24px}
+#sbBrush{display:flex;gap:4px;align-items:center}#sbBrush button{width:24px;height:24px;border-radius:50%;border:2px solid transparent;background:rgba(255,255,255,.08);cursor:pointer;display:grid;place-items:center}#sbBrush button.on{border-color:var(--acc)}#sbBrush i{display:block;border-radius:50%;background:#f2efe8}
+#sbTop{position:absolute;right:10px;top:10px;display:flex;gap:8px;align-items:center;padding:6px 10px}
+#sbClock{font-weight:700;min-width:120px;text-align:center}
+#sbStat{position:absolute;left:10px;top:10px;padding:8px 12px;display:flex;gap:14px;font-weight:700;align-items:center}
+#sbStat .bt{padding:4px 8px;font-size:12px}
+#sbSide{position:absolute;right:10px;top:58px;width:260px;padding:10px 12px;max-height:calc(100% - 330px);overflow:auto}
+.sbcol{padding:6px 4px;border-bottom:1px solid rgba(255,255,255,.08);cursor:pointer;border-radius:8px}.sbcol:hover{background:rgba(255,255,255,.06)}.sbcol:last-of-type{border-bottom:0}
+.sbcol .h{display:flex;justify-content:space-between;font-weight:700}.sbcol .s{color:var(--dim);font-size:12px;margin-top:2px}.sbcol.dead{opacity:.45}
+#sbUI i.dt{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}#sbUI .t{color:var(--mute);font-size:10px}
+#sbFeed{position:absolute;right:10px;bottom:150px;width:min(360px,60%);display:flex;flex-direction:column-reverse;align-items:flex-end;gap:3px;font-size:12px;pointer-events:none}
+#sbFeed div{background:rgba(10,10,14,.55);backdrop-filter:blur(6px);color:#eee;padding:4px 9px;border-radius:9px;transition:opacity .6s}
+#sbCard{position:absolute;left:10px;top:58px;padding:10px 12px;width:270px}
+#sbCard .kv{margin-top:4px}#sbCard canvas{display:block;width:100%;margin-top:6px;border-radius:8px;background:rgba(0,0,0,.35)}
+#sbCard .bars{display:grid;grid-template-columns:62px 1fr;gap:3px 6px;font-size:11px;color:var(--dim);margin-top:6px;align-items:center}
+#sbCard .bars b{display:block;height:6px;border-radius:3px;background:var(--acc)}#sbCard .bars span.o b{background:#5ad1ff}
+#sbExp{position:absolute;left:50%;top:10px;transform:translateX(-50%);padding:10px 12px;width:380px;text-align:center}
 #sbExp canvas{width:100%;height:60px;display:block;margin:6px 0}
-#sbHint{position:absolute;left:202px;bottom:14px;font-size:12px;color:var(--dim);max-width:280px}
-#sbToast{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 16px;border-radius:12px;background:rgba(0,0,0,.7);color:#fff;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none}
-@media (max-width:900px){#sbTools{width:140px;font-size:12px;bottom:auto;max-height:55%}#sbSide{width:200px;max-height:40%}#sbEv{max-width:calc(100% - 24px);bottom:8px}#sbCard,#sbHint{left:160px}#sbExp{width:min(320px,90%);top:56px}}`;
+#sbToast{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);padding:10px 16px;border-radius:12px;background:rgba(0,0,0,.72);color:#fff;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;text-align:center;max-width:80%}
+#sbHelp{position:absolute;inset:0;display:grid;place-items:center;background:rgba(0,0,0,.45);pointer-events:auto}
+#sbHelp .glass{max-width:520px;padding:18px 20px;line-height:1.5}#sbHelp kbd{background:rgba(255,255,255,.12);border-radius:5px;padding:1px 6px;font:inherit;font-size:12px}
+@media (max-width:900px){#sbTop{top:56px;left:10px;right:auto;max-width:calc(100% - 20px)}#sbClock{min-width:0}#sbSide{display:none}#sbSide.open{display:block;top:104px;max-height:45%}#sbCard{width:min(270px,calc(100% - 20px));top:104px}#sbFeed{bottom:160px;max-width:70%}#sbExp{width:min(340px,92%);top:104px}.pw{width:58px}}`;
   document.head.appendChild(css);
   const ui = document.createElement('div'); ui.id = 'sbUI'; ui.hidden = true;
-  const T = (id, e, n) => `<button class="sbt" data-t="${id}"><span class="e">${e}</span>${n}</button>`;
   ui.innerHTML = `
-<div class="glass" id="sbTools">
-  <h4>Колония</h4><div class="sbteams">${TEAMS.map((t, i) => `<button data-team="${i}" title="${t.name}" style="background:${t.c}"></button>`).join('')}</div>
-  <h4>Создать</h4>${T('queen', '👑', 'Королева')}${T('worker', '🪰', 'Рабочая')}${T('warrior', '⚔️', 'Воин')}${T('food', '🍬', 'Еда')}
-  <h4>Черты</h4>${T('smart', '🧠', 'Умная')}${T('dumb', '🤪', 'Глупая')}${T('chosen', '✨', 'Избранная')}${T('unlucky', '🌧', 'Невезучая')}${T('normal', '🙂', 'Обычная')}
-  <h4>Сила бога</h4>${T('follow', '🔍', 'Следить')}${T('bless', '🙏', 'Благословить')}${T('smite', '👟', 'Покарать')}
-  <h4>Наука</h4><button class="sbt" id="sbExpBtn"><span class="e">🎾</span>Эксперимент</button>
-  <h4>Мир</h4><button class="sbt" id="sbQuick"><span class="e">⚡</span>Быстрый старт</button><button class="sbt" id="sbClear"><span class="e">🗑</span>Очистить</button><button class="sbt" id="sbBack"><span class="e">↩</span>В меню</button>
-</div>
-<div class="glass" id="sbTop"><div class="seg" id="sbSpeed"></div><div class="seg" id="sbCam"><button data-cam="orbit" title="Орбита: вращать вокруг точки">🛰 Обзор</button><button data-cam="free" title="Свободный полёт (F)">🕊 Полёт</button><button data-cam="follow" title="Следить за мухой (Tab — следующая)">👁 Муха</button></div><div id="sbClock">День 1 · 06:00</div></div>
-<div class="glass" id="sbSide"><div id="sbCols"></div><canvas id="sbGraph" width="250" height="56" style="width:100%;height:56px;margin-top:6px"></canvas><div id="sbLog"></div></div>
-<div class="glass" id="sbEv">${Object.entries(EVENTS).map(([k, e]) => `<button class="btn" data-ev="${k}">${e.ic} ${e.n}</button>`).join('')}</div>
+<div class="glass" id="sbStat"><span id="sbPop">🪰 0</span><span id="sbColN">🏠 0</span><button class="btn bt" id="sbColsBtn" title="Колонии">📊</button><button class="btn bt" id="sbHelpBtn" title="Как играть">❔</button><button class="btn bt" id="sbBack" title="В меню (Esc)">↩</button></div>
+<div class="glass" id="sbTop"><div class="seg" id="sbSpeed"></div><div id="sbClock">День 1</div></div>
+<div class="glass" id="sbSide"><div id="sbCols"></div><canvas id="sbGraph" width="250" height="56" style="width:100%;height:56px;margin-top:6px"></canvas></div>
 <div class="glass" id="sbCard" hidden></div>
 <div class="glass" id="sbExp" hidden></div>
-<div id="sbHint">Выбери инструмент и кликни по миру · тяни — вращать · ПКМ — сдвиг · колесо — зум · WASD, Q/E — двигаться (Shift — быстрее) · F — свободный полёт · Tab — следить за следующей мухой · Пробел — пауза</div>
-<div id="sbToast"></div>`;
+<div id="sbFeed"></div>
+<div class="glass" id="sbBar"><div id="sbTabs">${TABS.map(([k, n]) => `<button data-tab="${k}">${n}</button>`).join('')}</div><div id="sbPow"></div><div id="sbInfo"><span id="sbDesc"></span><span id="sbBrush"></span></div></div>
+<div id="sbToast"></div>
+<div id="sbHelp" hidden><div class="glass"><b style="font-size:16px">🌍 Песочница: ты — бог мушиного двора</b>
+<div style="margin-top:8px">Внизу — <b>силы</b> по вкладкам. Выбери силу и кликни по миру, а для кисти <b>зажми и веди</b> мышью. Справа внизу — размер кисти.</div>
+<div style="margin-top:6px"><b>🔍 Смотреть</b> — клик по мухе показывает её мозг и характер; кнопкой «👁 Следить» камера летит за ней.</div>
+<div style="margin-top:6px"><kbd>Тяни ЛКМ</kbd> (в режиме 🔍) или <kbd>WASD</kbd> — двигать карту · <kbd>Колесо</kbd> — зум к курсору · <kbd>ПКМ</kbd> или <kbd>Q</kbd>/<kbd>E</kbd> — повернуть · <kbd>Пробел</kbd> — пауза · <kbd>1</kbd>–<kbd>4</kbd> — скорость · <kbd>Tab</kbd> — следующая муха · <kbd>Esc</kbd> — назад</div>
+<div style="margin-top:6px;color:var(--dim)">У каждой мухи свой коннектом из 367 нейронов FlyWire: он решает, когда вылетать за едой и когда спасаться. Мухи учатся при жизни (дофамин и боль) и передают гены потомкам.</div>
+<div class="row" style="margin:12px 0 0"><button class="btn pri" id="sbHelpOk">Понятно</button><button class="btn" id="sbHelpQuick">⚡ Сразу две колонии</button></div></div></div>`;
   document.body.appendChild(ui);
+  ui.addEventListener('click', () => { const a = document.activeElement; if (a && a.blur && a.tagName === 'BUTTON') a.blur(); });   /* иначе пробел «нажимает» последнюю кнопку */
   let toastT = 0; function toast2(s) { const el = $('#sbToast'); el.textContent = s; el.style.opacity = 1; toastT = 2.2; }
-  ui.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { W.tool = b.dataset.t; renderTools(); });
-  ui.querySelectorAll('[data-team]').forEach(b => b.onclick = () => { W.team = +b.dataset.team; renderTools(); });
-  ui.querySelectorAll('[data-ev]').forEach(b => b.onclick = () => runEvent(b.dataset.ev));
+  function setTab(t) { W.tab = t; renderBar(); }
+  function setTool(t) { W.tool = t; if (P[t] && P[t].tab) W.tab = P[t].tab; renderBar(); }
+  function renderBar() {
+    ui.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === W.tab));
+    const el = $('#sbPow'); let h = '';
+    const pw = (id) => `<button class="pw ${W.tool === id ? 'on' : ''}" data-p="${id}" title="${P[id].d}"><span class="e">${P[id].ic}</span>${P[id].n}</button>`;
+    if (W.tab === 'life') h = `<div class="sbteam"><span style="font-size:11px;color:var(--dim)">Колония</span><div>${TEAMS.map((t, i) => `<button data-team="${i}" title="${t.name}" class="${W.team === i ? 'on' : ''}" style="background:${t.c}"></button>`).join('')}</div></div>` + ['queen', 'worker', 'warrior', 'colony'].map(pw).join('');
+    else if (W.tab === 'event') h = Object.entries(EVENTS).map(([k, e]) => `<button class="pw" data-ev="${k}"><span class="e">${e.ic}</span>${e.n}</button>`).join('');
+    else if (W.tab === 'sci') h = `<button class="pw wide ${W.exp ? 'on' : ''}" id="sbExpBtn"><span class="e">🎾</span>${W.exp ? 'Закончить эксперимент' : 'Эксперимент «Принеси мячик»'}</button>`;
+    else if (W.tab === 'world') h = `<button class="pw wide" id="sbQuick"><span class="e">⚡</span>Две колонии</button><button class="pw wide" id="sbClear"><span class="e">🗑</span>Очистить мир</button><button class="pw wide" id="sbMenu"><span class="e">↩</span>В меню</button>`;
+    else h = Object.keys(P).filter(k => P[k].tab === W.tab).map(pw).join('');
+    el.innerHTML = h;
+    el.querySelectorAll('[data-p]').forEach(b => b.onclick = () => setTool(b.dataset.p));
+    el.querySelectorAll('[data-team]').forEach(b => b.onclick = () => { W.team = +b.dataset.team; if (!P[W.tool].team) W.tool = 'queen'; renderBar(); });
+    el.querySelectorAll('[data-ev]').forEach(b => b.onclick = () => runEvent(b.dataset.ev));
+    const eb = $('#sbExpBtn'); if (eb) eb.onclick = () => { if (W.exp) EXP.stop(); else EXP.start(); renderBar(); };
+    const q = $('#sbQuick'); if (q) q.onclick = () => quick(); const c = $('#sbClear'); if (c) c.onclick = () => clearAll(); const m = $('#sbMenu'); if (m) m.onclick = () => setMode('menu');
+    const p = P[W.tool]; $('#sbDesc').innerHTML = W.tab === 'event' ? 'События действуют на весь мир' : W.tab === 'sci' ? 'Отбор мух по генам мозга' : W.tab === 'world' ? '' : `<b>${p.ic} ${p.n}</b> — ${p.d}`;
+    $('#sbBrush').innerHTML = p.brush && W.tab !== 'event' && W.tab !== 'sci' && W.tab !== 'world' ? '<span style="margin-right:4px">Кисть</span>' + BRUSH.map((r, i) => `<button data-b="${i}" class="${W.brush === i ? 'on' : ''}" title="Размер ${i + 1}"><i style="width:${4 + i * 3}px;height:${4 + i * 3}px"></i></button>`).join('') : '';
+    $('#sbBrush').querySelectorAll('[data-b]').forEach(b => b.onclick = () => { W.brush = +b.dataset.b; renderBar(); });
+  }
+  ui.querySelectorAll('[data-tab]').forEach(b => b.onclick = () => setTab(b.dataset.tab));
   $('#sbBack').onclick = () => setMode('menu');
-  $('#sbClear').onclick = () => clearAll();
-  $('#sbQuick').onclick = () => quick();
-  $('#sbExpBtn').onclick = () => { if (W.exp) EXP.stop(); else EXP.start(); };
-  ui.querySelectorAll('[data-cam]').forEach(b => b.onclick = () => { const m = b.dataset.cam; if (m === 'follow') nextFly(1); else { W.follow = null; setCam(m); } });
-  $('#sbCard').addEventListener('click', e => { const a = e.target.closest('[data-c]'); if (!a) return; const c = a.dataset.c; if (c === 'next') nextFly(1); else if (c === 'prev') nextFly(-1); else if (c === 'watch') followFly(W.sel); else { W.sel = W.follow; followFly(null); } renderSide(); });
-  function renderCam() { ui.querySelectorAll('[data-cam]').forEach(b => b.classList.toggle('on', b.dataset.cam === (following() ? 'follow' : cam.mode))); }
-  function renderTools() { ui.querySelectorAll('[data-t]').forEach(b => b.classList.toggle('on', b.dataset.t === W.tool)); ui.querySelectorAll('[data-team]').forEach(b => b.classList.toggle('on', +b.dataset.team === W.team)); }
-  function renderSpeed() { const el = $('#sbSpeed'); el.innerHTML = ''; for (const [v, t] of [[0, '⏸'], [1, '×1'], [3, '×3'], [10, '×10'], [30, '×30']]) { const b = document.createElement('button'); b.textContent = t; b.classList.toggle('on', W.speed === v); b.onclick = () => { W.speed = v; renderSpeed(); }; el.appendChild(b); } }
+  $('#sbColsBtn').onclick = () => { $('#sbSide').classList.toggle('open'); $('#sbSide').hidden = innerWidth > 900 ? !$('#sbSide').hidden : false; };
+  $('#sbHelpBtn').onclick = () => { $('#sbHelp').hidden = false; };
+  $('#sbHelpOk').onclick = () => { $('#sbHelp').hidden = true; try { localStorage.setItem('sbHelpSeen', '1'); } catch (e) {} };
+  $('#sbHelpQuick').onclick = () => { $('#sbHelp').hidden = true; try { localStorage.setItem('sbHelpSeen', '1'); } catch (e) {} quick(); };
+  $('#sbCols').addEventListener('click', e => { const el = e.target.closest('[data-col]'); if (!el) return; const c = W.cols[+el.dataset.col]; if (!c) return; W.selCol = c; W.sel = null; W.follow = null; cam.tgt.x = c.nest.p.x; cam.tgt.z = c.nest.p.z; cam.dist = Math.min(cam.dist, 3); renderSide(true); });
+  $('#sbCard').addEventListener('click', e => { const a = e.target.closest('[data-c]'); if (!a) return; const k = a.dataset.c;
+    if (k === 'next') nextFly(1); else if (k === 'prev') nextFly(-1); else if (k === 'watch') followFly(W.sel); else if (k === 'stop') { W.follow = null; renderSide(true); } else if (k === 'close') { W.sel = W.follow = W.selCol = null; renderSide(true); }
+    else if (k === 'queen') { const q = W.flies.find(f => f.col === W.selCol && f.role === 'queen'); if (q) followFly(q); else toast2('Королевы нет'); } else if (k === 'goto' && W.selCol) { cam.tgt.x = W.selCol.nest.p.x; cam.tgt.z = W.selCol.nest.p.z; cam.dist = Math.min(cam.dist, 2); } });
+  function renderSpeed() { const el = $('#sbSpeed'); el.innerHTML = ''; for (const [v, t] of [[0, '⏸'], [1, '×1'], [3, '×3'], [10, '×10'], [30, '×30']]) { const b = document.createElement('button'); b.textContent = t; b.classList.toggle('on', W.speed === v); b.onclick = () => { if (v) W.lastSpeed = v; W.speed = v; renderSpeed(); }; el.appendChild(b); } }
   function renderExp() {
     const el = $('#sbExp'), x = W.exp; el.hidden = !x; if (!x) return;
-    if (x.placing) { el.innerHTML = '<b>🎾 Эксперимент «Принеси мячик»</b><div class="help" style="margin:6px 0">Кликни туда, где будешь ты — поставлю корзину. 24 мухи-ученицы будут бегать за мячиками, лучшие станут родителями. Черты по ученице: 🧠/✨ — сделать родителем, 🤪 — отбраковать.</div><button class="btn" id="exStop">Отмена</button>'; $('#exStop').onclick = () => EXP.stop(); return; }
+    if (x.placing) { el.innerHTML = '<b>🎾 Эксперимент «Принеси мячик»</b><div class="help" style="margin:6px 0">Кликни по земле или столу — там встанет корзина «ТЫ». 24 мухи-ученицы с настоящим коннектомом бегают за мячиками; лучшие передают гены мозга дальше. Черты кистью по ученицам: 🧠/✨ — сделать родителем, 🤪 — отбраковать.</div><button class="btn" id="exStop">Отмена</button>'; $('#exStop').onclick = () => { EXP.stop(); renderBar(); }; return; }
     el.innerHTML = `<b>🎾 ${x.show ? 'Чемпионка' : 'Поколение ' + x.gen}</b> · лучшая принесла <b>${x.best}</b> · в среднем ${(x.avg || 0).toFixed(1)}${x.trained ? ' · <span style="color:var(--good)">научились!</span>' : ''}<canvas id="exG" width="340" height="60"></canvas>
-      <div class="row" style="justify-content:center;margin:0"><button class="btn pri" id="exT">⏩ Учить 25 поколений</button><button class="btn" id="exS">${x.show ? '👥 Все ученицы' : '🏆 Чемпионка'}</button><button class="btn" id="exStop">✖</button></div>`;
-    $('#exT').onclick = () => EXP.turbo(25); $('#exS').onclick = () => EXP.show(); $('#exStop').onclick = () => EXP.stop();
+      <div class="row" style="justify-content:center;margin:0"><button class="btn pri" id="exT">⏩ Учить 10 поколений</button><button class="btn" id="exS">${x.show ? '👥 Все ученицы' : '🏆 Чемпионка'}</button><button class="btn" id="exStop">✖</button></div>`;
+    $('#exT').onclick = () => { toast2('Учу…'); setTimeout(() => EXP.turbo(10), 30); }; $('#exS').onclick = () => EXP.show(); $('#exStop').onclick = () => { EXP.stop(); renderBar(); };
     const g = $('#exG').getContext('2d'), H = x.hist, w = 340, h = 60; g.clearRect(0, 0, w, h); const mx = Math.max(4, ...H.map(q => q.b));
     for (const [key, c] of [['a', 'rgba(255,255,255,.5)'], ['b', '#ffc94a']]) { g.strokeStyle = c; g.lineWidth = 2; g.beginPath(); H.forEach((q, i) => { const px = H.length < 2 ? 0 : i / (H.length - 1) * w, py = h - 4 - q[key] / mx * (h - 10); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); }
   }
-  function renderSide() {
+  const STN = {idle:'отдыхает дома', rest:'спит', search:'ищет еду', toFood:'летит к еде', eat:'ест', toNest:'несёт еду домой', flee:'спасается бегством!', window:'летит на свет фонаря', patrol:'патрулирует', attack:'атакует врага', fight:'сражается!', raid:'летит в набег', retreat:'отступает раненой', lay:'откладывает яйца'};
+  let cardKey = '';
+  function brainView(f) {   /* живая активность коннектома выбранной мухи */
+    const cv = $('#sbBrainCv'); if (!cv) return; const g = cv.getContext('2d'), r = f.br.r, n = r.length, cols = 46, sz = 5;
+    g.clearRect(0, 0, cv.width, cv.height);
+    for (let i = 0; i < n; i++) { const v = Math.min(1, r[i] * 1.6), x = (i % cols) * (sz + 1) + 2, y = Math.floor(i / cols) * (sz + 1) + 2; g.fillStyle = v < 0.02 ? 'rgba(255,255,255,.07)' : `hsl(${45 - v * 40},100%,${30 + v * 40}%)`; g.fillRect(x, y, sz, sz); }
+    const I = f.br.inp, bar = (v) => `<b style="width:${clamp(v, 0, 1) * 100}%"></b>`;
+    $('#sbBars').innerHTML = `<span>👃 Запах</span><span>${bar((I[2] + I[3]) / 2)}</span><span>👁 Угроза</span><span>${bar(Math.max(I[0], I[1]))}</span><span>😊 Дофамин</span><span>${bar(I[8] / 1.5)}</span><span>😖 Боль</span><span>${bar(I[9] / 1.5)}</span>
+      <span class="o">🦘 Прыжок</span><span class="o">${bar(f.o.jump / Math.max(0.05, f.br.thJump))}</span><span class="o">🪽 Полёт</span><span class="o">${bar(f.o.fly * 3)}</span><span class="o">↔ Поворот</span><span class="o">${bar(Math.abs(f.o.turn))}</span>`;
+  }
+  function renderSide(force) {
     const d = Math.floor(W.t / DAY) + 1, hr = ((W.t / DAY) % 1) * 24 + 6, hh = Math.floor(hr % 24), mm = Math.floor((hr % 1) * 60);
     $('#sbClock').textContent = `${W.light < 0.2 ? '🌙' : '☀️'} День ${d} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
-    $('#sbCols').innerHTML = W.cols.length ? W.cols.map(c => `<div class="sbcol ${c.dead ? 'dead' : ''}"><div class="h"><span>${dot(c)}${c.name}</span><span>${c.dead ? '☠️ погибли' : LV[c.lv] + ' · ур. ' + c.lv}</span></div>${c.dead ? '' : `<div class="s">👑 ${c.q} · 🪰 ${c.wk} · ⚔️ ${c.wr} · 🥚 ${c.eg} · 🍬 ${Math.floor(c.food)}${c.raid ? ' · ⚔️ набег на ' + c.raid.name : ''}</div><div class="s">родилось ${c.births} · погибло ${c.deaths} · побед ${c.kills}</div>`}</div>`).join('')
-      : '<div class="help" style="margin:0">Мир пуст. Выбери 👑 Королеву и кликни по столу — или жми ⚡ Быстрый старт.</div>';
+    $('#sbPop').textContent = `🪰 ${W.flies.length}`; $('#sbColN').textContent = `🏠 ${W.cols.filter(c => !c.dead).length}`;
+    $('#sbCols').innerHTML = W.cols.length ? '<div style="font-weight:700;margin-bottom:4px">Колонии</div>' + W.cols.map((c, i) => `<div class="sbcol ${c.dead ? 'dead' : ''}" data-col="${i}"><div class="h"><span><i class="dt" style="background:${c.css}"></i>${c.name}</span><span>${c.dead ? '☠️' : LV[c.lv] + ' · ' + c.lv}</span></div>${c.dead ? '' : `<div class="s">👑 ${c.q} · 🪰 ${c.wk} · ⚔️ ${c.wr} · 🥚 ${c.eg} · 🍬 ${Math.floor(c.food)}${c.raid ? ' · ⚔️ → ' + c.raid.name : ''}</div>`}</div>`).join('')
+      : '<div class="help" style="margin:0">Мир пуст. Вкладка <b>🪰 Жизнь</b> → 👑 Королева → клик по траве. Или вкладка 🌍 Мир → ⚡ Две колонии.</div>';
     const g = $('#sbGraph').getContext('2d'), w = 250, h = 56; g.clearRect(0, 0, w, h); let mx = 5; for (const c of W.cols) for (const v of c.hist) mx = Math.max(mx, v);
     for (const c of W.cols) { if (c.hist.length < 2) continue; g.strokeStyle = c.css; g.lineWidth = 2; g.beginPath(); c.hist.forEach((v, i) => { const px = i / 89 * w, py = h - 3 - v / mx * (h - 8); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); }
-    if (logDirty) { $('#sbLog').innerHTML = logs.map(s => `<div>${s}</div>`).join(''); logDirty = false; }
-    if (W.sel && W.sel.hp <= 0 && W.sel.role !== 'student') W.sel = null;
-    const f = following() ? W.follow : W.sel, card = $('#sbCard');
-    if (f && (f.hp > 0 || f.role === 'student')) {
-      const stn = {idle:'отдыхает в гнезде', rest:'спит', search:'ищет еду', toFood:'летит к еде', eat:'ест', toNest:'несёт еду домой', flee:'спасается бегством', window:'бьётся в окно', patrol:'патрулирует', attack:'атакует врага', fight:'сражается!', raid:'летит в набег', retreat:'отступает раненой', lay:'откладывает яйца'}[f.st] || (f.role === 'student' ? (f.carry ? 'несёт мячик к тебе' : 'ищет мячик') : '');
-      card.hidden = false; card.innerHTML = `<b>${f.trait ? TRAIT[f.trait].ic + ' ' : ''}${f.name}</b><div class="s" style="color:var(--dim)">${ROLE[f.role]}${f.col ? ' · ' + f.col.name : ''}${f.trait ? ' · ' + TRAIT[f.trait].n : ''}</div><div style="color:var(--acc);font-weight:700;margin:4px 0">${stn}</div>
-        <div class="kv">${f.role === 'student' ? `<span>Принесла</span><b>${f.del}</b><span>Очки</span><b>${f.fit.toFixed(1)}</b>` : `<span>Здоровье</span><b>${Math.max(0, f.hp).toFixed(1)} / ${f.maxHp}</b><span>Возраст</span><b>${Math.floor(f.age)} с</b><span>Побед</span><b>${f.kills}</b>`}</div>
-        <div class="row" style="margin:8px 0 0;gap:4px"><button class="btn" data-c="prev" title="Предыдущая">⏮</button>${W.follow === f ? '<button class="btn" data-c="stop">✖ Хватит</button>' : '<button class="btn pri" data-c="watch">👁 Следить</button>'}<button class="btn" data-c="next" title="Следующая (Tab)">⏭</button></div>`;
-    } else card.hidden = true;
+    /* лента событий: свежие сообщения, потом гаснут */
+    const now = performance.now(), feed = logs.filter(l => now - l.at < 9000).slice(0, 5);
+    const fk = feed.map(l => l.at).join(); if (fk !== renderSide.fk || force) { renderSide.fk = fk; $('#sbFeed').innerHTML = feed.map(l => `<div style="opacity:${now - l.at > 7000 ? 0.3 : 1}">${l.h.replace(/<i style/g, '<i class="dt" style')}</div>`).join(''); }
+    const card = $('#sbCard'), f = following() ? W.follow : (W.sel && (W.sel.hp > 0 || W.sel.role === 'student') ? W.sel : null);
+    if (f) {
+      const key = 'f' + f.id + (W.follow === f) + f.trait;
+      if (key !== cardKey || force) { cardKey = key;
+        card.innerHTML = `<div style="display:flex;justify-content:space-between"><b id="sbFn"></b><button class="btn" data-c="close" style="padding:0 8px">✕</button></div><div id="sbFsub" style="color:var(--dim);font-size:12px"></div><div id="sbFst" style="color:var(--acc);font-weight:700;margin:4px 0"></div><div class="kv" id="sbFkv"></div>
+          <canvas id="sbBrainCv" width="280" height="54"></canvas><div class="bars" id="sbBars"></div>
+          <div class="row" style="margin:8px 0 0;gap:4px"><button class="btn" data-c="prev">⏮</button>${W.follow === f ? '<button class="btn" data-c="stop">✖ Не следить</button>' : '<button class="btn pri" data-c="watch">👁 Следить</button>'}<button class="btn" data-c="next">⏭</button></div>`; }
+      card.hidden = false;
+      $('#sbFn').innerHTML = `${f.trait ? TRAIT[f.trait].ic + ' ' : ''}${f.name}`;
+      $('#sbFsub').textContent = `${ROLE[f.role]}${f.col ? ' · ' + f.col.name : ''}${f.trait ? ' · ' + TRAIT[f.trait].n : ''}${f.gen ? ' · поколение ' + f.gen : ''}`;
+      $('#sbFst').textContent = STN[f.st] || (f.role === 'student' ? (f.carry ? 'несёт мячик к тебе' : 'ищет мячик') : '');
+      $('#sbFkv').innerHTML = f.role === 'student' ? `<span>Принесла</span><b>${f.del}</b><span>Очки</span><b>${f.fit.toFixed(1)}</b>` : `<span>Здоровье</span><b>${Math.max(0, f.hp).toFixed(1)} / ${f.maxHp}</b><span>Возраст</span><b>${Math.floor(f.age)} с</b><span>Принесла еды</span><b>${f.deliv}</b><span>Побед</span><b>${f.kills}</b><span>Научилась</span><b>${(learned(f.br) * 100).toFixed(1)}%</b><span>Нюх / пугливость</span><b>${f.br.kSmell.toFixed(1)} / ${(0.5 / f.br.thJump).toFixed(1)}</b>`;
+      brainView(f);
+    } else if (W.selCol && !W.selCol.dead) {
+      const c = W.selCol, key = 'c' + c.name + c.lv;
+      if (key !== cardKey || force) { cardKey = key; card.innerHTML = `<div style="display:flex;justify-content:space-between"><b><i class="dt" style="background:${c.css}"></i>${c.name}</b><button class="btn" data-c="close" style="padding:0 8px">✕</button></div><div class="kv" id="sbCkv"></div><div class="row" style="margin:8px 0 0;gap:4px"><button class="btn pri" data-c="queen">👁 Королева</button><button class="btn" data-c="goto">📍 К гнезду</button></div>`; }
+      card.hidden = false;
+      $('#sbCkv').innerHTML = `<span>Поселение</span><b>${LV[c.lv]} (ур. ${c.lv})</b><span>Мух</span><b>${c.n} · 🥚 ${c.eg}</b><span>Рабочих / воинов</span><b>${c.wk} / ${c.wr}</b><span>Еды</span><b>${Math.floor(c.food)}</b><span>Стройка</span><b>${c.lv < 5 ? Math.floor(c.build) + ' / ' + LV_BUILD[c.lv + 1] : 'готово'}</b><span>Родилось / погибло</span><b>${c.births} / ${c.deaths}</b><span>Побед</span><b>${c.kills}</b>`;
+    } else { card.hidden = true; cardKey = ''; }
   }
-  function renderAll() { renderTools(); renderSpeed(); renderSide(); renderExp(); }
+  function renderAll() { renderBar(); renderSpeed(); renderSide(true); renderExp(); }
 
   /* ---------- управление миром ---------- */
   function clearAll() {
     for (const c of W.cols) root.remove(c.house);
-    W.flies = []; W.cols = []; W.eggs = []; W.corpses = []; W.foods = []; W.spider = null; spiderObj.visible = false; W.follow = null; W.t = 0; W.events = 0; W.exp = null; basket.visible = false; logs.length = 0; logDirty = true;
+    W.flies = []; W.cols = []; W.eggs = []; W.corpses = []; W.foods = []; W.spider = null; spiderObj.visible = false; W.follow = W.sel = W.selCol = null; W.t = 30; W.events = 0; W.exp = null; basket.visible = false; logs.length = 0; logDirty = true;
     for (const fd of WD.FOODS) addFood({p:fd.p, n:fd.n}, 40, 0.15);
     renderAll();
   }
   function quick() {
     clearAll();
-    /* два горизонтальных места подальше друг от друга, у каждого — своя кормушка */
     let spots = null;
-    for (let k = 0; k < 400 && !spots; k++) { const a = randLand(), b = randLand(); if (a.n.y > 0.9 && b.n.y > 0.9 && surfAt(a.p, a.n) && surfAt(b.p, b.n) && Math.hypot(a.p.x - b.p.x, a.p.z - b.p.z) > 5 && !WD.inObst(a.p.x, a.p.y + 0.05, a.p.z, 0.06) && !WD.inObst(b.p.x, b.p.y + 0.05, b.p.z, 0.06)) spots = [a, b]; }
-    if (!spots) spots = [{p:V(-1.5, 0.002, 1.2), n:V(0, 1, 0)}, {p:V(1.5, 0.002, -1.2), n:V(0, 1, 0)}];
+    for (let k = 0; k < 400 && !spots; k++) { const a = randLand(), b = randLand(); if (a.n.y > 0.9 && b.n.y > 0.9 && a.p.y < 0.01 && b.p.y < 0.01 && Math.hypot(a.p.x - b.p.x, a.p.z - b.p.z) > 6 && !WD.inObst(a.p.x, 0.05, a.p.z, 0.25) && !WD.inObst(b.p.x, 0.05, b.p.z, 0.25)) spots = [a, b]; }
+    if (!spots) spots = [{p:V(-3, 0.002, 1.5), n:V(0, 1, 0)}, {p:V(3.5, 0.002, -1.5), n:V(0, 1, 0)}];
     for (let t = 0; t < 2; t++) { const c = newColony(t, spots[t]); addFly('queen', c, spots[t]); for (let k = 0; k < 5; k++) addFly('worker', c, nearOn(spots[t], 0.05)); for (let k = 0; k < 2; k++) addFly('warrior', c, nearOn(spots[t], 0.05)); c.food = 15; for (let k = 0; k < 2; k++) addFood(nearOn(spots[t], 0.3), 30, 0.12); }
-    log('⚡ Две колонии готовы. Посмотрим, кто кого!'); W.speed = 3; renderAll();
+    log('⚡ Две колонии готовы. Посмотрим, кто кого!'); W.speed = 3; W.lastSpeed = 3;
+    cam.tgt.x = (spots[0].p.x + spots[1].p.x) / 2; cam.tgt.z = (spots[0].p.z + spots[1].p.z) / 2; cam.dist = 11; renderAll();
   }
   let open = false, uiT = 0, saved = null;
   function show(on) {
@@ -3979,28 +4143,32 @@ const SB = (() => {
     if (on && !open) {   /* прячем кухню целиком — у песочницы свой мир, небо и свет */
       saved = {kids:scene.children.filter(o => o !== root).map(o => [o, o.visible]), bg:scene.background, fog:scene.fog, far:camera.far};
       for (const [o] of saved.kids) o.visible = false;
-      scene.background = new THREE.Color(0x9cc8ef); scene.fog = new THREE.Fog(0x9cc8ef, 16, 55); camera.far = 80; camera.updateProjectionMatrix();
-      if (!W.foods.length && !W.cols.length) clearAll(); renderAll(); renderCam();
+      scene.background = new THREE.Color(0x6fb0f0); scene.fog = new THREE.Fog(0x6fb0f0, 18, 60); camera.far = 90; camera.updateProjectionMatrix();
+      if (!W.foods.length && !W.cols.length) clearAll(); renderAll();
+      let seen = false; try { seen = !!localStorage.getItem('sbHelpSeen'); } catch (e) {} $('#sbHelp').hidden = seen;
     }
-    if (!on && open && saved) { for (const [o, v] of saved.kids) o.visible = v; scene.background = saved.bg; scene.fog = saved.fog; camera.far = saved.far; camera.updateProjectionMatrix(); saved = null; }
+    if (!on && open && saved) { for (const [o, v] of saved.kids) o.visible = v; scene.background = saved.bg; scene.fog = saved.fog; camera.far = saved.far; camera.updateProjectionMatrix(); saved = null; hand.on = false; cam.drag = 0; }
     open = on;
   }
   function frame(dt) {
-    const n = Math.round(dt * W.speed / DT_S); for (let i = 0; i < Math.min(n, 60); i++) step(DT_S);
+    bBudget = 260;
+    const n = Math.round(dt * W.speed / DT_S); for (let i = 0; i < Math.min(n, 30); i++) step(DT_S);
     if (W.speed && n === 0) step(dt * W.speed);
     camFrame(dt); render(dt);
-    if ((uiT += dt) > 0.25) { uiT = 0; renderSide(); if (W.exp && !W.exp.placing && (W.exp.gen !== W.exp._g)) { W.exp._g = W.exp.gen; renderExp(); } }
+    if ((uiT += dt) > 0.2) { uiT = 0; renderSide(); if (W.exp && !W.exp.placing && (W.exp.gen !== W.exp._g)) { W.exp._g = W.exp.gen; renderExp(); } }
     if (toastT > 0 && (toastT -= dt) <= 0) $('#sbToast').style.opacity = 0;
   }
   function key(e) {
-    if (e.code === 'Escape') { if (following()) { W.sel = W.follow; return followFly(null); } return setMode('menu'); }
+    if (!$('#sbHelp').hidden) { if (e.code === 'Escape' || e.code === 'Enter') $('#sbHelpOk').click(); return; }
+    if (e.code === 'Escape') { if (following()) { W.follow = null; renderSide(true); return; } if (W.sel || W.selCol) { W.sel = W.selCol = null; renderSide(true); return; } if (W.tool !== 'inspect') { setTool('inspect'); return; } return setMode('menu'); }
     if (e.code === 'Tab') { e.preventDefault(); return nextFly(e.shiftKey ? -1 : 1); }
-    if (e.code === 'KeyF') { W.follow = null; return setCam(cam.mode === 'free' ? 'orbit' : 'free'); }
-    if (e.code === 'Space') { e.preventDefault(); W.speed = W.speed ? 0 : 1; renderSpeed(); }
-    const sp = {Digit1:1, Digit2:3, Digit3:10, Digit4:30}[e.code]; if (sp) { W.speed = sp; renderSpeed(); }
+    if (e.code === 'Space') { e.preventDefault(); W.speed = W.speed ? 0 : (W.lastSpeed || 1); renderSpeed(); }
+    const sp = {Digit1:1, Digit2:3, Digit3:10, Digit4:30}[e.code]; if (sp) { W.speed = W.lastSpeed = sp; renderSpeed(); }
+    if (e.code === 'BracketLeft') { W.brush = Math.max(0, W.brush - 1); renderBar(); } if (e.code === 'BracketRight') { W.brush = Math.min(4, W.brush + 1); renderBar(); }
+    if (e.code === 'KeyI') setTool('inspect');
   }
   $('#mSb').onclick = () => { initAudio(); setMode('sb'); };
-  return {show, frame, mouse, wheel, key, W, EXP, step, click, quick, clearAll, runEvent, logs};
+  return {show, frame, mouse, wheel, key, W, EXP, step, apply, quick, clearAll, runEvent, logs, setTool, cam, P};
 })();
 
 applyLocation(store.settings.loc); tuneEnv(scene); renderLocs();
