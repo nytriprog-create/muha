@@ -4015,7 +4015,7 @@ const SB = (() => {
     {n:'Забор', c:[140, 98, 58], h:0.62, burn:0.6},
   ];
   const isWater = t => t <= SHAL, isWall = t => t === WALL || t === FENCE, landable = t => t > SHAL && t !== LAVA && t !== WALL && t !== FENCE;
-  const tile = new Uint8Array(N), hgt = new Float32Array(N), jit = new Float32Array(N * 4), fireT = new Float32Array(N), lavaT = new Float32Array(N), lavaF = new Uint8Array(N), owner = new Int16Array(N).fill(-1), ownS = new Float32Array(N);
+  const tile = new Uint8Array(N), hgt = new Float32Array(N), jit = new Float32Array(N * 4), fireT = new Float32Array(N), lavaT = new Float32Array(N), lavaF = new Uint8Array(N), owner = new Int16Array(N).fill(-1), ownS = new Float32Array(N), wallOwn = new Int16Array(N).fill(-1);
   let burning = [], lavas = [];
   const inMap = (x, y) => x >= 0 && y >= 0 && x < MW && y < MH;
   const idx = (x, y) => (y | 0) * MW + (x | 0);
@@ -4121,7 +4121,7 @@ const SB = (() => {
         for (let yy = y0; yy <= y0 + h; yy++) for (let xx = x0; xx <= x0 + w; xx++) { if (yy !== y0 && yy !== y0 + h && xx !== x0 && xx !== x0 + w) { if (rng() < 0.15) tile[yy * MW + xx] = ROCK; continue; } if (rng() < 0.62) { tile[yy * MW + xx] = WALL; hgt[yy * MW + xx] = 0.72; } }
       }
     }
-    fireT.fill(0); lavaT.fill(0); lavaF.fill(0); burning = []; lavas = []; owner.fill(-1);
+    fireT.fill(0); lavaT.fill(0); lavaF.fill(0); burning = []; lavas = []; owner.fill(-1); wallOwn.fill(-1);
     W.seed = seed; paintAll(); terrT = 0;
   }
 
@@ -4194,11 +4194,15 @@ const SB = (() => {
     honey:[pixCanvas(6, 7, o => { o.ell(3, 4.4, 2.6, 2.6, '#e39418'); o.rect(2, 1, 2, 2, '#e39418'); o.px(3, 0, '#e39418'); o.px(2, 3, '#ffd27a'); o.px(2, 4, '#ffc04a'); })],
     melon:[pixCanvas(11, 8, o => { o.ell(5.5, 4, 5.3, 3.8, '#3f8a3a'); for (const x of [2, 5, 8]) for (let y = 1; y < 7; y++) o.px(x + (y % 3 === 0 ? 1 : 0), y, '#245a22'); o.px(3, 2, '#7ac06a'); o.px(4, 1, '#7ac06a'); })],
     dung:[pixCanvas(10, 8, o => { o.ell(5, 6, 4.8, 2.2, '#4a3018'); o.ell(5, 4.2, 3.4, 1.9, '#6a4424'); o.ell(5, 2.6, 2, 1.4, '#7a5230'); o.px(5, 1, '#8a6038'); o.px(3, 4, '#8a6038'); o.px(7, 6, '#2e1c0c'); })],
+    cactus:[pixCanvas(7, 8, o => { o.rect(3, 1, 2, 7, '#3e8a46'); o.rect(1, 3, 1, 3, '#3e8a46'); o.rect(1, 5, 2, 1, '#3e8a46'); o.rect(5, 2, 1, 3, '#3e8a46'); o.rect(5, 4, 1, 1, '#3e8a46'); o.px(3, 0, '#ff6a9a'); o.px(4, 0, '#ff9ac0'); o.px(4, 3, '#7ac06a'); })],
     mush:[pixCanvas(6, 6, o => { o.rect(2, 3, 2, 3, '#efe4d0'); o.ell(3, 2, 3, 2, '#d8403a'); o.px(1, 1, '#fff'); o.px(4, 1, '#fff'); o.px(3, 2, '#fff'); })]};
   const ITEMSPR = {
     lamp:pixCanvas(7, 15, o => { o.rect(3, 5, 1, 9, '#34343c'); o.rect(1, 14, 5, 1, '#24242a'); o.rect(1, 1, 5, 4, '#2a2a32'); o.rect(2, 2, 3, 2, '#ffe9a0'); o.rect(2, 0, 3, 1, '#2a2a32'); o.px(3, 4, '#ffd060'); }),
     zapper:pixCanvas(9, 12, o => { o.rect(4, 0, 1, 1, '#555'); o.rect(0, 1, 9, 10, '#2a2a34'); o.rect(1, 2, 7, 8, '#5a4ad8'); for (const x of [2, 4, 6]) o.rect(x, 2, 1, 8, '#c8c0ff'); o.rect(1, 11, 7, 1, '#1a1a20'); }),
     paper:pixCanvas(4, 15, o => { o.rect(1, 0, 2, 1, '#8a8a8a'); o.rect(0, 1, 4, 14, '#e8c860'); for (let y = 3; y < 15; y += 4) o.rect(0, y, 4, 1, '#c8a040'); o.px(1, 2, '#fff2b0'); }),
+    feeder:pixCanvas(11, 13, o => { o.rect(5, 4, 1, 9, '#6b4a2c'); o.rect(1, 3, 9, 1, '#8a5a30'); o.rect(0, 2, 11, 1, '#b07a3f'); o.rect(1, 4, 9, 3, '#d8c8a8'); o.rect(2, 4, 7, 2, '#f4f4ee'); o.rect(3, 12, 5, 1, '#4a3420'); }),
+    scarecrow:pixCanvas(11, 17, o => { o.rect(5, 4, 1, 13, '#6b4a2c'); o.rect(1, 6, 9, 1, '#6b4a2c'); o.rect(3, 6, 5, 6, '#b04040'); o.rect(4, 7, 3, 1, '#7a2a2a'); o.ell(5.5, 3, 2.2, 2.2, '#e8c070'); o.px(4, 3, '#1b1b22'); o.px(6, 3, '#1b1b22'); o.rect(2, 0, 7, 1, '#7a5a30'); o.rect(3, 0, 5, 1, '#9a7040'); o.px(0, 6, '#e8c070'); o.px(10, 6, '#e8c070'); o.px(1, 7, '#e8c070'); o.px(9, 7, '#e8c070'); }),
+    bonfire:pixCanvas(11, 6, o => { o.rect(0, 4, 11, 2, '#5a3a20'); o.rect(1, 3, 9, 1, '#7a5230'); o.px(0, 3, '#8a8680'); o.px(10, 3, '#8a8680'); o.px(2, 5, '#8a8680'); o.px(8, 5, '#8a8680'); }),
     tower:pixCanvas(9, 19, o => { o.rect(1, 6, 7, 13, '#8e8a82'); for (let y = 8; y < 19; y += 3) o.rect(1, y, 7, 1, '#76726a'); o.rect(0, 4, 9, 2, '#a8a49c'); for (let x = 0; x < 9; x += 2) o.rect(x, 2, 1, 2, '#a8a49c'); o.rect(3, 9, 3, 3, '#1d150f'); o.px(4, 10, '#ffd77a'); o.rect(3, 15, 3, 4, '#3a2a1e'); o.rect(4, 0, 1, 4, '#5a4a3a'); }),
     statue:pixCanvas(11, 15, o => { o.rect(1, 10, 9, 5, '#8a8680'); o.rect(0, 9, 11, 1, '#a8a49c'); o.rect(1, 14, 9, 1, '#6a6660'); o.g.drawImage(FLYBASE, 0, 0); o.g.globalCompositeOperation = 'source-atop'; o.rect(0, 0, 11, 9, 'rgba(255,200,60,.75)'); }),
   };
@@ -4275,7 +4279,7 @@ const SB = (() => {
     if (t === 'chosen') { f.maxHp *= 3; f.hp = f.maxHp; } else if (was === 'chosen') { f.maxHp /= 3; f.hp = Math.min(f.hp, f.maxHp); }
     f.br = makeBrain(f.g, t, f.br); return true; }
   const wxMul = () => W.wx.kind === 'storm' ? 0.75 : W.wx.kind === 'snow' ? 0.78 : W.wx.kind === 'rain' ? 0.88 : 1;
-  const spd = f => (f.role === 'queen' ? 0.45 : f.role === 'warrior' ? 1.35 : 1.05) * (f.trait === 'chosen' ? 1.3 : f.trait === 'smart' ? 1.12 : f.trait === 'dumb' ? 0.8 : 1) * (f.col && f.col.lv >= 3 && f.role === 'worker' ? 1.2 : 1) * (0.85 + 0.3 * clamp(f.o.fwd, 0, 1)) * wxMul() * (f.mSpd || 1) * (f.zombie ? 0.8 : 1);
+  const spd = f => (f.role === 'queen' ? 0.45 : f.role === 'warrior' ? 1.35 : 1.05) * (f.trait === 'chosen' ? 1.3 : f.trait === 'smart' ? 1.12 : f.trait === 'dumb' ? 0.8 : 1) * (f.col && f.col.lv >= 3 && f.role === 'worker' ? 1.2 : 1) * (0.85 + 0.3 * clamp(f.o.fwd, 0, 1)) * wxMul() * (f.mSpd || 1) * (f.zombie ? 0.7 : 1);
   const dmg = f => (f.role === 'warrior' ? 2.2 : f.role === 'queen' ? 1 : 0.5) * (f.trait === 'chosen' ? 2.5 : 1) * (f.col && f.col.lv >= 4 && f.role === 'warrior' ? 1.3 : 1) * (f.mDmg || 1);
   const senseR = f => (f.role === 'warrior' ? 1.1 : 0.9) * (f.trait === 'smart' ? 2 : f.trait === 'dumb' ? 0.5 : 1) * U;
   function flyTo(f, q, st) { if (!q) return; f.tgt = q; if (st) f.st = st; f.landed = false; }
@@ -4322,11 +4326,14 @@ const SB = (() => {
     f.alt += (Math.min(1, d / 1.5) - f.alt) * Math.min(1, dt * 5);
     if (Math.hypot(f.vx, f.vy) > 0.1) f.h = Math.atan2(f.vy, f.vx);
   }
-  function passable(f, x, y) { const i = idx(x, y), t = tile[i]; return !isWall(t) || (f.col && owner[i] === f.col.id); }
+  /* стена не пропускает никого */
+  function passable(f, x, y) { return !isWall(tile[idx(x, y)]); }
+  /* можно ли долететь по прямой, не упираясь в стену */
+  function clearPath(x0, y0, x1, y1) { const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 0.5); for (let s = 1; s < n; s++) if (isWall(tile[idx(lerp(x0, x1, s / n), lerp(y0, y1, s / n))])) return false; return true; }
   function nearestEnemy(f, r) {
     let best = null, bd = r;
     for (const p of W.preds) { if (f.role === 'worker') break; const d = Math.hypot(p.x - f.x, p.y - f.y); if (d < bd) { bd = d; best = p; } }
-    forNear(f.x, f.y, r, o => { if (o === f || o.hp <= 0 || (!o.zombie && (o.col === f.col || !o.col))) return; const d = Math.abs(o.x - f.x) + Math.abs(o.y - f.y); if (d < bd) { bd = d; best = o; } });
+    forNear(f.x, f.y, r, o => { if (o === f || o.hp <= 0 || (!o.zombie && (o.col === f.col || !o.col || (f.col && o.col.team === f.col.team)))) return; const d = Math.abs(o.x - f.x) + Math.abs(o.y - f.y); if (d < bd) { bd = d; best = o; } });
     return best;
   }
   function mishap(f) {
@@ -4355,9 +4362,9 @@ const SB = (() => {
         if (night) { f.st = 'rest'; f.smellT = null; if (Math.hypot(f.x - c.nx, f.y - c.ny) > HOUSE_R[c.lv] + 3) flyTo(f, nestSpot(c)); return; }
         if (f.stT > 0) return;
         const r = (1.6 + 1.6 * f.br.kSmell) * U * (W.wx.kind === 'fog' ? 0.6 : 1); let best = null, bd = 1e9;
-        for (const fd of W.foods) { if (fd.amt < 0.5) continue; const d = Math.hypot(fd.x - f.x, fd.y - f.y); if (d > (fd.kind === 'dung' ? r * 2.2 : r)) continue; const own = owner[idx(fd.x, fd.y)], sc = d - (f.trait === 'smart' ? fd.amt * 0.2 : 0) + (own >= 0 && own !== c.id ? 12 : 0); if (sc < bd) { bd = sc; best = fd; } }
+        for (const fd of W.foods) { if (fd.amt < 0.5) continue; const d = Math.hypot(fd.x - f.x, fd.y - f.y); if (d > (fd.kind === 'dung' ? r * 2.2 : r)) continue; const own = owner[idx(fd.x, fd.y)], sc = d - (f.trait === 'smart' ? fd.amt * 0.2 : 0) + (own >= 0 && own !== c.id ? 12 : 0); if (sc < bd && clearPath(f.x, f.y, fd.x, fd.y)) { bd = sc; best = fd; } }
         f.smellT = best;
-        const wk = W.wx.kind === 'storm' ? 0.3 : W.wx.kind === 'acid' ? 0.35 : W.wx.kind === 'rain' ? 0.7 : W.wx.kind === 'snow' ? 0.6 : 1;
+        const wk = W.wx.kind === 'storm' ? 0.3 : W.wx.kind === 'acid' || W.wx.kind === 'hail' ? 0.35 : W.wx.kind === 'rain' ? 0.7 : W.wx.kind === 'snow' ? 0.6 : 1;
         f.urge += dt * (0.25 + 3 * f.o.fly + 0.8 * (f.br.inp[2] + f.br.inp[3])) * (f.trait === 'dumb' ? 0.6 : 1) * wk;
         if (f.urge < 1) return; f.urge = 0;
         if (f.trait === 'dumb' && Math.random() < 0.35) best = null;
@@ -4412,6 +4419,8 @@ const SB = (() => {
     else { if (!e.foe && e.role !== 'student') e.foe = f; hurt(e, hit, f); }
     if (e.hp <= 0) { f.foe = null; f.st = 'idle'; }
   }
+  /* черта ребёнка: черта колонии, иначе от мамы (70%) или папы (30%) */
+  function kidTrait(c, mom, dad) { if (c.trait !== undefined && c.trait !== null) return c.trait; if (mom && mom.trait && Math.random() < 0.7) return mom.trait; if (dad && dad.trait && Math.random() < 0.3) return dad.trait; return null; }
   function queen(f, dt) {
     const c = f.col;
     if (f.foe) return fight(f, dt);
@@ -4422,7 +4431,7 @@ const SB = (() => {
       c.food -= 3; f.layT = R(4, 7);
       const threat = c.lastFoe && W.t - (c.lastFoeT || -99) < 30;
       let dad = null, bs = -1; for (const o of W.flies) if (o.col === c && o.hp > 0 && o !== f) { const s = o.deliv + o.kills * 2 + Math.random(); if (s > bs) { bs = s; dad = o; } }
-      W.eggs.push({col:c, ...nestSpot(c), t:W.t + R(9, 13), role:Math.random() < (threat ? 0.55 : 0.28) ? 'warrior' : 'worker', g:childGenome(f.g, dad ? dad.g : f.g), gen:Math.max(f.gen, dad ? dad.gen : 0) + 1});
+      W.eggs.push({col:c, ...nestSpot(c), t:W.t + R(9, 13), role:Math.random() < (threat ? 0.55 : 0.28) ? 'warrior' : 'worker', g:childGenome(f.g, dad ? dad.g : f.g), gen:Math.max(f.gen, dad ? dad.gen : 0) + 1, trait:kidTrait(c, f, dad)});
     }
   }
 
@@ -4442,9 +4451,9 @@ const SB = (() => {
   }
 
   /* ================= ПОГОДА ================= */
-  const WX = {clear:'Ясно', rain:'Дождь', storm:'Гроза', snow:'Снегопад', fog:'Туман', drought:'Засуха', acid:'Кислотный дождь'};
+  const WX = {clear:'Ясно', rain:'Дождь', storm:'Гроза', snow:'Снегопад', fog:'Туман', drought:'Засуха', acid:'Кислотный дождь', hail:'Град'};
   function setWeather(k, dur, quiet) { W.wx.kind = k; W.wx.t = dur || R(70, 160); if (k === 'storm') { const a = R(0, TAU); W.wind.x = Math.cos(a) * 4; W.wind.y = Math.sin(a) * 4; } if (!quiet) log(`Погода: <b>${WX[k].toLowerCase()}</b>`); cloudTarget(); }
-  function cloudTarget() { W.cloudN = {clear:5, rain:16, storm:22, snow:14, fog:4, drought:1, acid:18}[W.wx.kind]; }
+  function cloudTarget() { W.cloudN = {clear:5, rain:16, storm:22, snow:14, fog:4, drought:1, acid:18, hail:20}[W.wx.kind]; }
   function weatherStep(dt) {
     if ((W.wx.t -= dt) <= 0) { if (W.wx.auto) { const r = Math.random(), k = r < 0.5 ? 'clear' : r < 0.72 ? 'rain' : r < 0.78 ? 'storm' : r < 0.87 ? 'snow' : r < 0.96 ? 'fog' : 'drought'; setWeather(k === W.wx.kind ? 'clear' : k); } else W.wx.t = 60; }
     if (W.wind.gust > 0) W.wind.gust -= dt;
@@ -4457,6 +4466,7 @@ const SB = (() => {
   function tileTicks(dt) {
     tickAcc += dt * 900; const rain = W.wx.kind === 'rain' || W.wx.kind === 'storm', dry = W.wx.kind === 'drought', acid = W.wx.kind === 'acid';
     while (tickAcc >= 1) { tickAcc--; const i = (Math.random() * N) | 0, t = tile[i]; if (fireT[i] > 0) continue;
+      if (W.wx.kind === 'hail' && t === MEAD && Math.random() < 0.04) { setTile(i, GRASS); continue; }
       if (acid && (t === MEAD || t === FOREST || t === JUNGLE || t === GRASS) && Math.random() < 0.05) { setTile(i, t === GRASS ? ASH : GRASS); continue; }
       if (t === ASH) { if (Math.random() < (rain ? 0.12 : 0.02)) setTile(i, GRASS); }
       else if (t === GRASS) { if (Math.random() < (rain ? 0.05 : 0.004) && !dry) setTile(i, MEAD); else if (Math.random() < 0.002) { const j = i + pick([1, -1, MW, -MW]); if (j >= 0 && j < N && tile[j] === FOREST) setTile(i, FOREST); } }
@@ -4565,7 +4575,8 @@ const SB = (() => {
     const r2 = Math.max(0.6, r);
     const nests = isWall(t) ? W.cols.filter(c => !c.dead && Math.hypot(c.nx - x, c.ny - y) < r2 + 3) : [];
     for (let yy = Math.floor(y - r2); yy <= y + r2; yy++) for (let xx = Math.floor(x - r2); xx <= x + r2; xx++) { if (!inMap(xx, yy) || Math.hypot(xx + 0.5 - x, yy + 0.5 - y) > r2) continue; const i = yy * MW + xx; if (tile[i] === t) continue;
-      if (nests.some(c => Math.hypot(c.nx - xx - 0.5, c.ny - yy - 0.5) < 1.6)) continue; fireT[i] = 0; setTile(i, t); }
+      if (nests.some(c => Math.hypot(c.nx - xx - 0.5, c.ny - yy - 0.5) < 1.6)) continue; fireT[i] = 0; setTile(i, t);
+    }
     if (isWall(t)) W.foods = W.foods.filter(fd => !isWall(tAt(fd.x, fd.y)));
     if (isWater(t) || t === LAVA) { W.foods = W.foods.filter(fd => Math.hypot(fd.x - x, fd.y - y) > r2 + 0.5); for (const c of W.cols) if (!c.dead && Math.hypot(c.nx - x, c.ny - y) <= r2 + 0.5) relocate(c); }
   }
@@ -4581,11 +4592,15 @@ const SB = (() => {
     sugarRain:{n:'Сахарный дождь', d:'25 секунд с неба сыплются кубики сахара — и прямо у тебя на экране, и у каждой колонии', run(){ W.sugarT = 25; W.foods = W.foods.filter(fd => fd.kind !== 'nectar' || fd.amt > 3); log('С неба посыпался <b>сахар</b>!'); sfx('ding', null, 0.5); }},
     meteorRain:{n:'Звездопад', d:'Десяток метеоритов по всей карте', run(){ for (let k = 0; k < 10; k++) { const q = findLand(R(15, MW - 15), R(15, MH - 15), 10); if (q) W.mets.push({x:q.x, y:q.y, r:R(3, 6), t:1.1 + k * 0.6, t0:1.1 + k * 0.6, quiet:true}); } log('Начался звездопад!'); sfx('launch', null, 0.6); }},
     rainbow:{n:'Радуга', d:'Все мухи исцелены, повсюду распускаются цветы', run(){ for (const f of W.flies) { f.hp = f.maxHp; reward(f, 0.6); } let n = 0; for (let k = 0; k < 40000 && n < 900; k++) { const i = (Math.random() * N) | 0; if (tile[i] === GRASS || tile[i] === ASH) { setTile(i, MEAD); n++; } } W.rainbowT = 10; log('Над миром встала <b>радуга</b>: мухи здоровы, луга цветут'); sfx('fanfare', null, 0.5); }},
+    eclipse:{n:'Затмение', d:'Солнце гаснет на полминуты — мухи думают, что ночь', run(){ W.eclipseT = 30; log('Наступило <b>солнечное затмение</b>'); sfx('record', null, 0.4); }},
+    festival:{n:'Праздник', d:'Всем колониям по 40 еды и салют в небе', run(){ for (const c of W.cols) if (!c.dead) c.food += 40; W.fwT = 10; log('Мушиный <b>праздник урожая</b>! Салют!'); sfx('fanfare', null, 0.6); }},
+    truce:{n:'Перемирие', d:'Все войны прекращаются', run(){ for (const c of W.cols) c.raid = null; for (const f of W.flies) if (f.foe && !f.foe.kind) f.foe = null; log('Колонии заключили <b>перемирие</b>'); sfx('ding', null, 0.5); }},
+    golden:{n:'Золотая муха', d:'Случайная муха становится избранной', run(){ const L = W.flies.filter(f => f.trait !== 'chosen' && !f.zombie); if (!L.length) return; const f = pick(L); setTrait(f, 'chosen'); log(`Небеса выбрали ${who(f)}!`); W.sel = f; cam.x = f.x; cam.y = f.y; cam.z = Math.max(cam.z, 14); sfx('fanfare', null, 0.5); }},
     birds:{n:'Стая стрижей', d:'Прилетают пять голодных стрижей', run(){ for (let k = 0; k < 5; k++) spawnPred('bird', R(20, MW - 20), R(20, MH - 20), true); log('Налетела <b>стая стрижей</b>!'); }},
-    zombieOut:{n:'Зомби-эпидемия', d:'Несколько мух становятся зомби и заражают остальных', run(){ const L = W.flies.filter(f => !f.zombie && f.role !== 'queen'); for (let k = 0; k < 6 && L.length; k++) infect(L.splice((Math.random() * L.length) | 0, 1)[0], true); log('Началась <b>зомби-эпидемия</b>! Воины, защищайте гнёзда'); sfx('trombone', null, 0.5); }},
+    zombieOut:{n:'Зомби-эпидемия', d:'Несколько мух становятся зомби и заражают остальных', run(){ const cs = W.cols.filter(c => !c.dead && c.n > 3); if (!cs.length) return; const c0 = pick(cs), L = W.flies.filter(f => f.col === c0 && !f.zombie && f.role === 'worker'); for (let k = 0; k < 6 && L.length; k++) infect(L.splice((Math.random() * L.length) | 0, 1)[0], true); cam.x = c0.nx; cam.y = c0.ny; cam.z = Math.max(cam.z, 10); log('Началась <b>зомби-эпидемия</b>! Воины, защищайте гнёзда'); sfx('trombone', null, 0.5); }},
     plague:{n:'Мор', d:'Болезнь косит мух по всему миру', run(){ let n = 0; for (const f of W.flies) { if (f.hp <= 0 || f.trait === 'chosen') continue; if (Math.random() < 0.22) { kill(f, null); n++; } else f.hp *= R(0.4, 1); } log(`Мор! Погибло мух: ${n}`); sfx('trombone', null, 0.5); }},
     famine:{n:'Голод', d:'Еды везде вчетверо меньше', run(){ for (const fd of W.foods) fd.amt *= 0.25; for (const c of W.cols) c.food *= 0.5; log('Голод: еды стало вчетверо меньше'); }},
-    boom:{n:'Бэби-бум', d:'Королевы откладывают кучу яиц', run(){ for (const f of W.flies) if (f.role === 'queen' && f.hp > 0) for (let k = 0; k < 5; k++) W.eggs.push({col:f.col, ...nestSpot(f.col), t:W.t + R(3, 8), role:Math.random() < 0.3 ? 'warrior' : 'worker', g:childGenome(f.g, f.g), gen:f.gen + 1}); log('Бэби-бум! Королевы отложили кучу яиц'); sfx('fanfare', null, 0.5); }},
+    boom:{n:'Бэби-бум', d:'Королевы откладывают кучу яиц', run(){ for (const f of W.flies) if (f.role === 'queen' && f.hp > 0) for (let k = 0; k < 5; k++) W.eggs.push({col:f.col, ...nestSpot(f.col), t:W.t + R(3, 8), role:Math.random() < 0.3 ? 'warrior' : 'worker', g:childGenome(f.g, f.g), gen:f.gen + 1, trait:kidTrait(f.col, f, null)}); log('Бэби-бум! Королевы отложили кучу яиц'); sfx('fanfare', null, 0.5); }},
   };
   function godAct() { if (++W.events === 5) ACH.give('sb_god'); }
   function runEvent(k) { EVENTS[k].run(); godAct(); }
@@ -4593,7 +4608,11 @@ const SB = (() => {
   /* ================= ПРЕДМЕТЫ ================= */
   function itemsStep(dt) {
     const night = W.light < 0.35;
+    W.warm = W.items.filter(it => it.kind === 'bonfire'); W.warmT = W.warm.length > 0;
     for (const it of W.items) {
+      if (it.kind === 'feeder') { it.a += dt; if (it.a > 3) { it.a = 0; if (W.foods.filter(fd => Math.abs(fd.x - it.x) < 3 && Math.abs(fd.y - it.y) < 3).length < 4) { const q = findLand(it.x, it.y, 2); if (q) addFood(q.x, q.y, 10, 0, 'sugar', 200); } } continue; }
+      if (it.kind === 'scarecrow') { for (const p of W.preds) { const dx = p.x - it.x, dy = p.y - it.y, d = Math.hypot(dx, dy) || 1; if (d > 14) continue; if (p.kind === 'bird') { p.vx += dx / d * 80 * dt; p.vy += dy / d * 80 * dt; } else if (p.kind === 'frog' && p.cd <= 0) { const q = findLand(p.x + dx / d * 6, p.y + dy / d * 6, 2); if (q) { p.x = q.x; p.y = q.y; p.cd = 1; } } } continue; }
+      if (it.kind === 'bonfire') { it.a += dt * 10; continue; }
       const ti = idx(it.x, it.y); if (tile[ti] === LAVA || isWater(tile[ti]) || (fireT[ti] > 0 && (it.kind === 'paper' || it.kind === 'fan'))) { it.dead = true; continue; }
       if (it.kind === 'lamp' || it.kind === 'zapper') {
         if (!night) continue;
@@ -4611,7 +4630,7 @@ const SB = (() => {
       } else if (it.kind === 'tower') {
         const c = it.col; if (!c || c.dead) { it.dead = true; continue; } it.cd -= dt; if (it.cd > 0) continue;
         let best = null, bd = 7; for (const p of W.preds) { const d = Math.hypot(p.x - it.x, p.y - it.y); if (d < bd) { bd = d; best = p; } }
-        forNear(it.x, it.y, 7, f => { if (f.hp <= 0 || f.col === c && !f.zombie) return; if (!f.zombie && f.role !== 'warrior') return; const d = Math.hypot(f.x - it.x, f.y - it.y); if (d < bd) { bd = d; best = f; } });
+        forNear(it.x, it.y, 7, f => { if (f.hp <= 0 || (!f.zombie && (!f.col || f.col.team === c.team))) return; if (!f.zombie && f.role !== 'warrior') return; const d = Math.hypot(f.x - it.x, f.y - it.y); if (d < bd) { bd = d; best = f; } });
         if (best) { it.cd = 0.9; W.fx.push({k:'shot', x:it.x, y:it.y - 1.4, x2:best.x, y2:best.y, t:0, life:0.18}); if (best.kind) best.hp -= 4; else hurt(best, 2.5, null); if (best.hp <= 0) it.kills++; }
       } else if (it.kind === 'statue') {
         for (const c of W.cols) if (!c.dead && Math.hypot(c.nx - it.x, c.ny - it.y) < 22) c.food += dt * 0.12;
@@ -4659,17 +4678,17 @@ const SB = (() => {
     if (W.mutLog-- > 0) log(`Мутация! ${who(f)} ${what}`);
   }
   function infect(f, quiet) {
-    if (f.zombie || f.role === 'student') return; f.zombie = true; f.zT = R(55, 85); f.foe = null; f.lamp = null; f.stuck = null; f.st = 'zombie'; f.maxHp = Math.max(f.maxHp, 4); f.hp = f.maxHp; f.zTarget = null; f.scanT = R(1, 3);
+    if (f.zombie || f.role === 'student') return; f.zombie = true; f.zT = R(30, 50); f.foe = null; f.lamp = null; f.stuck = null; f.st = 'zombie'; f.hp = Math.max(f.hp, f.maxHp * 0.6); f.zTarget = null; f.scanT = R(1, 3);
     W.zombies = (W.zombies || 0) + 1; if (W.zombies === 30) ACH.give('sb_zombie'); if (!quiet && Math.random() < 0.15) log(`${who(f)} стала зомби`);
   }
   function zombie(f, dt) {
     f.zT -= dt; if (f.zT <= 0) { kill(f, null); return; }
     if ((f.scanT -= dt) <= 0) { f.scanT = 0.6; let best = null, bd = 9; forNear(f.x, f.y, 9, o => { if (o.zombie || o.hp <= 0 || o === f || o.stuck) return; const d = Math.hypot(o.x - f.x, o.y - f.y); if (d < bd) { bd = d; best = o; } }); f.zTarget = best; }
     const e = f.zTarget;
-    if (e && e.hp > 0 && !e.zombie) { const d = Math.hypot(e.x - f.x, e.y - f.y); if (d > 0.6) { f.tgt = {x:e.x, y:e.y}; f.landed = false; } else if (Math.random() < dt * 0.8) { const resist = e.role === 'queen' ? 0.85 : e.role === 'warrior' ? 0.45 : e.trait === 'chosen' ? 0.9 : 0.1; if (Math.random() > resist) infect(e); else { hurt(f, 1.5, e); f.zTarget = null; f.scanT = 2; } sndAt('splat', e.x, e.y, 0.15); } }
+    if (e && e.hp > 0 && !e.zombie) { const d = Math.hypot(e.x - f.x, e.y - f.y); if (d > 0.6) { f.tgt = {x:e.x, y:e.y}; f.landed = false; } else if (Math.random() < dt * 0.4) { const resist = e.role === 'queen' ? 0.95 : e.role === 'warrior' ? 0.75 : e.trait === 'chosen' ? 0.95 : e.trait === 'smart' ? 0.5 : 0.35; if (Math.random() > resist) infect(e); else { hurt(f, 1.5, e); f.zTarget = null; f.scanT = 2; } sndAt('splat', e.x, e.y, 0.15); } }
     else if (f.landed && Math.random() < dt) {
       /* зомби бредут к ближайшему живому гнезду — так зараза расползается по миру */
-      let nc = null, bd = 130; if (Math.random() < 0.35) for (const c of W.cols) { if (c.dead || c.n === 0) continue; const d = Math.hypot(c.nx - f.x, c.ny - f.y); if (d > 6 && d < bd) { bd = d; nc = c; } }
+      let nc = null, bd = 60; if (Math.random() < 0.15) for (const c of W.cols) { if (c.dead || c.n === 0) continue; const d = Math.hypot(c.nx - f.x, c.ny - f.y); if (d > 6 && d < bd) { bd = d; nc = c; } }
       flyTo(f, nc ? findLand(lerp(f.x, nc.nx, Math.min(1, 25 / bd)), lerp(f.y, nc.ny, Math.min(1, 25 / bd)), 3) : findLand(f.x + R(-6, 6), f.y + R(-6, 6), 2)); }
   }
   function holeStep(o, dt) {
@@ -4690,7 +4709,7 @@ const SB = (() => {
   }
 
   /* ================= ШАГ МИРА ================= */
-  function calcLight() { W.light = clamp(Math.sin(((W.t / DAY) % 1) * TAU) * 1.6 + 0.35, 0, 1); }
+  function calcLight() { W.light = clamp(Math.sin(((W.t / DAY) % 1) * TAU) * 1.6 + 0.35, 0, 1); if (W.eclipseT > 0) W.light *= clamp(1 - Math.min(W.eclipseT, 30 - W.eclipseT) / 4, 0.05, 1); }
   function step(dt) {
     W.t += dt; calcLight();
     weatherStep(dt); tileTicks(dt); fireStep(dt); lavaStep(dt); radStep(dt);
@@ -4698,7 +4717,7 @@ const SB = (() => {
       const v = s2w(R(0, VW), R(0, VH)), live = W.cols.filter(c => !c.dead), c = live.length && Math.random() < 0.5 ? pick(live) : null;
       const q = c ? findLand(c.nx + R(-1, 1) * terrR(c) * 0.7, c.ny + R(-1, 1) * terrR(c) * 0.7, 3) : findLand(clamp(v.x, 2, MW - 2), clamp(v.y, 2, MH - 2), 3);
       if (q) addFood(q.x, q.y, 12, 0, 'sugar', R(120, 200)); } }
-    if (W.rainbowT > 0) W.rainbowT -= dt;
+    if (W.rainbowT > 0) W.rainbowT -= dt; if (W.eclipseT > 0) W.eclipseT -= dt; if (W.fwT > 0) W.fwT -= dt;
     for (const o of W.holes) holeStep(o, dt); if (W.holes.length) W.holes = W.holes.filter(o => o.t > 0);
     for (const b of W.nukes) { b.t -= dt; if (b.t <= 0) nukeHit(b.x, b.y); } if (W.nukes.length) W.nukes = W.nukes.filter(b => b.t > 0);
     rebuildGrid();
@@ -4707,13 +4726,14 @@ const SB = (() => {
     if ((natT -= dt * fm) <= 0) { natT = 0.5; let nat = 0; for (const fd of W.foods) if (fd.life) nat++;
       if (nat < 170) for (let k = 0; k < 6; k++) { const i = (Math.random() * N) | 0, t = tile[i]; if (fireT[i] > 0) continue; const x = i % MW + 0.5, y = (i / MW | 0) + 0.5;
         if (t === MEAD) { addFood(x, y, 10, 0.05, 'nectar', R(160, 260)); break; } if (t === FOREST && Math.random() < 0.25) { addFood(x, y, 22, 0.02, 'fruit', R(200, 300)); break; }
+        if ((t === DESERT || t === SAND) && Math.random() < 0.3) { addFood(x, y, 14, 0.02, 'cactus', R(200, 300)); break; }
         if (t === JUNGLE && Math.random() < 0.5) { addFood(x, y, 26, 0.03, 'fruit', R(200, 300)); break; } if (t === CANDY && Math.random() < 0.6) { addFood(x, y, 12, 0, 'sugar', R(160, 240)); break; }
         if (t === MUSH && Math.random() < 0.5) { addFood(x, y, 16, 0.02, 'mush', R(180, 260)); break; } } }
     itemsStep(dt);
     for (const fd of W.foods) { if (fd.regen) fd.amt = Math.min(fd.max, fd.amt + dt * fd.regen * fm); if (fd.life) fd.life -= dt; if (fireT[idx(fd.x, fd.y)] > 0 || !landable(tAt(fd.x, fd.y))) fd.amt = 0; }
     W.foods = W.foods.filter(fd => (fd.amt > 0.3 || (fd.regen && fd.amt > 0.01 && fireT[idx(fd.x, fd.y)] <= 0)) && !(fd.life && fd.life < 0 && fd.amt < fd.max * 0.5) && !(fd.life < -60));
     for (let i = W.eggs.length - 1; i >= 0; i--) { const e = W.eggs[i]; if (W.t < e.t) continue; W.eggs.splice(i, 1); if (e.col.dead) continue;
-      const f = addFly(e.role, e.col, e.x, e.y, {g:e.g, gen:e.gen}); if (f) { e.col.births++; if (e.role === 'queen') log(`${dot(e.col)} Колония вырастила новую королеву — ${who(f)}!`); } }
+      const f = addFly(e.role, e.col, e.x, e.y, {g:e.g, gen:e.gen, trait:e.trait || null}); if (f) { e.col.births++; if (e.role === 'queen') log(`${dot(e.col)} Колония вырастила новую королеву — ${who(f)}!`); } }
     for (const f of W.flies) {
       if (f.hp <= 0) continue;
       f.age += dt; if (f.age > f.life * (f.trait === 'chosen' ? 1.6 : 1)) { if (f.role === 'queen' || f.trait) log(`${f.col ? dot(f.col) : ''} ${who(f)} умерла от старости`); kill(f, null); continue; }
@@ -4723,6 +4743,8 @@ const SB = (() => {
       if (f.landed && !landable(tt)) { f.landed = false; f.tgt = findLand(f.x, f.y, 8); }
       if (W.snow > 0.6 && f.col && Math.hypot(f.x - f.col.nx, f.y - f.col.ny) > 14) hurt(f, 0.02 * dt, null);
       if (W.wx.kind === 'acid' && !f.landed) hurt(f, 0.12 * dt, null);
+      if (W.wx.kind === 'hail' && !f.landed && Math.random() < dt * 0.04) { hurt(f, 0.5, null); f.stun = 0.6; f.vx = R(-2, 2); f.vy = R(-2, 2); }
+      if (W.warmT && f.landed && f.hp < f.maxHp && W.warm.some(it => Math.abs(it.x - f.x) < 8 && Math.abs(it.y - f.y) < 8)) f.hp = Math.min(f.maxHp, f.hp + dt * 0.15);
       if (radAny && rad[ti] > 0.05) { hurt(f, dt * rad[ti] * 0.5, null); if (f.hp <= 0) continue; if (!f.mut && Math.random() < dt * rad[ti] * 0.08) mutate(f); }
       if (f.zombie) { zombie(f, dt); if (f.hp > 0) move(f, dt); continue; }
       if ((f.stuck || f.lamp) && itemFly(f, dt)) continue;
@@ -4745,16 +4767,17 @@ const SB = (() => {
       let n = 0, q = 0, wk = 0, wr = 0; for (const o of W.flies) if (o.col === c && !o.zombie) { n++; if (o.role === 'queen') q++; else if (o.role === 'worker') wk++; else wr++; }
       c.n = n; c.q = q; c.wk = wk; c.wr = wr; c.eg = 0; for (const e of W.eggs) if (e.col === c) c.eg++;
       if (c.n >= 30) ACH.give('sb_colony');
+      /* гнездо понемногу кормит себя само (запасы, роса, тля) — колония не вымирает от голода даже в пустыне или за стеной */
+      if (c.n) c.food += dt * 0.05 * (1 + c.lv * 0.25);
       if (!c.q && c.food < 25 && c.n && !c.warnQ) { c.warnQ = true; log(`${dot(c)} ${c.name} остались без королевы — копят еду на новую`); }
       if (c.q) c.warnQ = false;
-      if (!c.q && c.n && c.food >= 25 && !W.eggs.some(e => e.col === c && e.role === 'queen')) { const mom = W.flies.find(o => o.col === c); c.food -= 20; W.eggs.push({col:c, ...nestSpot(c), t:W.t + 12, role:'queen', g:childGenome(mom.g, mom.g), gen:mom.gen + 1}); log(`${dot(c)} ${c.name} выкармливают королевское яйцо`); }
+      if (!c.q && c.n && c.food >= 25 && !W.eggs.some(e => e.col === c && e.role === 'queen')) { const mom = W.flies.find(o => o.col === c); c.food -= 20; W.eggs.push({col:c, ...nestSpot(c), t:W.t + 12, role:'queen', g:childGenome(mom.g, mom.g), gen:mom.gen + 1, trait:kidTrait(c, mom, null)}); log(`${dot(c)} ${c.name} выкармливают королевское яйцо`); }
       if (c.n === 0 && c.eg === 0) { c.dead = true; terrT = 0; log(`${dot(c)} Колония <b>${c.name}</b> погибла${c.lastFoe ? ` — её уничтожили ${c.lastFoe.name}` : ''}`); if (c.lastFoe && !c.lastFoe.dead) ACH.give('sb_war'); sfx('trombone', null, 0.25); continue; }
       const nt = idx(c.nx, c.ny); if (fireT[nt] > 0 || tile[nt] === LAVA) { c.fire += dt; c.food = Math.max(0, c.food - dt * 2); if (c.fire > 5 + c.lv * 2 && c.lv > 1) { c.fire = 0; c.lv--; c.build = LV_BUILD[c.lv]; c.huts = c.huts.slice(0, c.lv >= 5 ? 7 : c.lv >= 4 ? 3 : 0); log(`${dot(c)} Пожар в <b>${c.name}</b>: дома сгорели`); } }
       if (!isWater(tile[nt]) && tile[nt] !== LAVA) {} else relocate(c);
-      if (!c.raid && W.war && W.t > DAY * 1.5 && c.wr >= 8 && c.lv >= 3 && (c.food < 20 || c.n >= CAP[c.lv] * 0.9) && Math.random() < dt / 160) { const o = W.cols.filter(x => x !== c && !x.dead && Math.hypot(x.nx - c.nx, x.ny - c.ny) < 140); if (o.length) { c.raid = o.reduce((a, b) => Math.hypot(a.nx - c.nx, a.ny - c.ny) < Math.hypot(b.nx - c.nx, b.ny - c.ny) ? a : b); c.raidT = 25; log(`${dot(c)} <b>${c.name}</b> пошли войной на ${c.raid.name}!`); sndAt('airhorn', c.nx, c.ny, 0.2); } }
+      if (!c.raid && W.war && W.t > DAY * 1.5 && c.wr >= 8 && c.lv >= 3 && (c.food < 20 || c.n >= CAP[c.lv] * 0.9) && Math.random() < dt / 160) { const o = W.cols.filter(x => x !== c && !x.dead && x.team !== c.team && Math.hypot(x.nx - c.nx, x.ny - c.ny) < 140); if (o.length) { c.raid = o.reduce((a, b) => Math.hypot(a.nx - c.nx, a.ny - c.ny) < Math.hypot(b.nx - c.nx, b.ny - c.ny) ? a : b); c.raidT = 25; log(`${dot(c)} <b>${c.name}</b> пошли войной на ${c.raid.name}!`); sndAt('airhorn', c.nx, c.ny, 0.2); } }
       if (c.raid && ((c.raidT -= dt) <= 0 || c.raid.dead)) c.raid = null;
       /* расселение: большой город отправляет королеву основать новое поселение */
-      if (c.lv >= 3 && c.n >= CAP[c.lv] * 0.7 && c.food >= 40 && c.q && W.cols.filter(x => !x.dead).length < 12 && Math.random() < dt / 45) spread(c);
       if ((c.histT = (c.histT || 0) - dt) <= 0) { c.histT = 3; c.hist.push(c.n); if (c.hist.length > 90) c.hist.shift(); }
     }
     if ((terrT -= dt) <= 0) { terrT = 1; computeTerritory(); }
@@ -4765,9 +4788,9 @@ const SB = (() => {
     for (let k = 0; k < 40 && !spot; k++) { const a = R(0, TAU), d = R(30, 60), x = c.nx + Math.cos(a) * d, y = c.ny + Math.sin(a) * d; if (!inMap(x, y) || !landable(tAt(x, y)) || tile[idx(x, y)] === SWAMP) continue; if (owner[idx(x, y)] >= 0) continue; if (W.cols.some(o => !o.dead && Math.hypot(o.nx - x, o.ny - y) < 24)) continue; spot = {x, y}; }
     if (!spot) return;
     const usedT = new Set(W.cols.filter(o => !o.dead).map(o => o.team)); let team = c.team; for (let k = 0; k < 8; k++) if (!usedT.has(k)) { team = k; break; }
-    const n = newColony(team, spot.x, spot.y); n.food = 12; c.food -= 30;
+    const n = newColony(team, spot.x, spot.y); n.food = 12; c.food -= 30; n.trait = c.trait;
     const qn = W.flies.find(o => o.col === c && o.role === 'queen'), g = qn ? qn.g : founderGenome();
-    const mk = (role, gg) => { const f = addFly(role, n, c.nx + R(-1, 1), c.ny + R(-1, 1), {g:gg, gen:(qn ? qn.gen : 1) + 1}); if (f) flyTo(f, nestSpot(n)); return f; };
+    const mk = (role, gg) => { const f = addFly(role, n, c.nx + R(-1, 1), c.ny + R(-1, 1), {g:gg, gen:(qn ? qn.gen : 1) + 1, trait:kidTrait(n, qn, null)}); if (f) flyTo(f, nestSpot(n)); return f; };
     mk('queen', childGenome(g, g)); for (let k = 0; k < 4; k++) mk('worker', childGenome(g, g)); mk('warrior', childGenome(g, g));
     log(`${dot(c)} <b>${c.name}</b> основали новое поселение — ${dot(n)}<b>${n.name}</b>`); ACH.give('sb_spread'); sndAt('fanfare', c.nx, c.ny, 0.25);
   }
@@ -4781,7 +4804,7 @@ const SB = (() => {
     hill:T_('Холмы', HILL, 'Возвышенности'), mount:T_('Горы', MOUNT, 'Скалы и хребты'), snow:T_('Снег', SNOW, 'Холодные вершины'), swamp:T_('Болото', SWAMP, 'Сырая низина'),
     desert:T_('Пустыня', DESERT, 'Жаркие пески с кактусами. Еды почти нет'), jungle:T_('Джунгли', JUNGLE, 'Густой тропический лес: очень много плодов'),
     candy:T_('Сахарные земли', CANDY, 'Волшебная земля: на ней сам растёт сахар'), mush:T_('Грибница', MUSH, 'Грибы — сытная еда для мух'),
-    wall:{n:'Стена', tab:'items', d:'Каменная стена. Свои мухи пролетают через ворота своей земли, чужие и хищники — нет', brush:1, hold:0.03, terr:WALL},
+    wall:{n:'Стена', tab:'items', d:'Каменная стена: не пропускает никого — ни мух, ни хищников, ни лаву', brush:1, hold:0.03, terr:WALL},
     fence:{n:'Забор', tab:'items', d:'Деревянный забор: как стена, но горит', brush:1, hold:0.03, terr:FENCE},
     melon:{n:'Арбуз', tab:'items', d:'Огромная сладкая еда, которая отрастает'}, dung:{n:'Навоз', tab:'items', d:'Мухи чуют его издалека — почти бесконечная еда'},
     lamp:{n:'Фонарь', tab:'items', d:'Ночью мухи слетаются к свету и кружат вокруг'}, zapper:{n:'Ловушка', tab:'items', d:'Электроловушка: светится ночью и убивает подлетевших мух', harm:1},
@@ -4808,6 +4831,11 @@ const SB = (() => {
     nuke:{n:'Ядерка', tab:'nature', d:'Огромный взрыв, гриб до небес и радиация: выжившие мухи мутируют', harm:1},
     hole:{n:'Чёрная дыра', tab:'nature', d:'Затягивает мух, еду и предметы, оставляет бездонное озеро', harm:1},
     zombie:{n:'Зомби', tab:'power', d:'Мухи под кистью становятся зомби и кусают остальных. Лечит «Благословить»', brush:1, hold:0.3, harm:1},
+    giant:{n:'Великан', tab:'power', d:'Муха вырастает вдвое: ×4 здоровья, ×3 урона, но медленнее', brush:1, hold:0.3},
+    clone:{n:'Клон', tab:'power', d:'Копирует мух под кистью вместе с мозгом и чертой', brush:1, hold:0.4},
+    crown:{n:'Корона', tab:'power', d:'Клик по мухе: она становится королевой новой колонии, а 3 соседки уходят с ней'},
+    feeder:{n:'Кормушка', tab:'items', d:'Сама насыпает сахар вокруг себя'}, scarecrow:{n:'Пугало', tab:'items', d:'Отпугивает стрижей и лягушек'},
+    bonfire:{n:'Костёр', tab:'items', d:'Тёплый свет: мухи рядом лечатся и не мёрзнут'},
     raise:{n:'Поднять', tab:'land', d:'Поднимает землю: море → берег → луг → холмы → горы', brush:1, hold:0.12},
     lower:{n:'Опустить', tab:'land', d:'Опускает землю: горы → холмы → луг → берег → море', brush:1, hold:0.12},
     portal:{n:'Портал', tab:'items', d:'Ставь парами: мухи, влетевшие в один, вылетают из другого'},
@@ -4815,7 +4843,7 @@ const SB = (() => {
     cloud:{n:'Тучка', tab:'nature', d:'Дождь кистью: тушит пожары, остужает лаву, растит цветы', brush:1, hold:0.1},
   };
   const TABS = [['land', 'Земля'], ['life', 'Жизнь'], ['food', 'Еда'], ['items', 'Предметы'], ['trait', 'Черты'], ['power', 'Силы'], ['nature', 'Стихии'], ['weather', 'Погода'], ['event', 'События'], ['sci', 'Наука'], ['world', 'Мир']];
-  const WXB = [['clear', 'Ясно', 'Солнце и лёгкий бриз'], ['rain', 'Дождь', 'Цветы растут, еды больше, пожары гаснут'], ['storm', 'Гроза', 'Ливень, ветер и молнии'], ['snow', 'Снег', 'Мир покрывается снегом, еда почти не растёт'], ['fog', 'Туман', 'Мухи хуже видят еду и врагов'], ['drought', 'Засуха', 'Луга вянут, мелководье высыхает, леса горят'], ['acid', 'Кислотный дождь', 'Жжёт летающих мух и губит растения'], ['sugarW', 'Сахарный дождь', 'Сахар сыплется с неба'], ['wind', 'Ветер', 'Сильный ветер сносит летящих мух'], ['night', 'День/ночь', 'Переключить время суток'], ['auto', 'Авто', 'Погода меняется сама']];
+  const WXB = [['clear', 'Ясно', 'Солнце и лёгкий бриз'], ['rain', 'Дождь', 'Цветы растут, еды больше, пожары гаснут'], ['storm', 'Гроза', 'Ливень, ветер и молнии'], ['snow', 'Снег', 'Мир покрывается снегом, еда почти не растёт'], ['fog', 'Туман', 'Мухи хуже видят еду и врагов'], ['drought', 'Засуха', 'Луга вянут, мелководье высыхает, леса горят'], ['acid', 'Кислотный дождь', 'Жжёт летающих мух и губит растения'], ['hail', 'Град', 'Ледяные градины сбивают летящих мух и мнут цветы'], ['sugarW', 'Сахарный дождь', 'Сахар сыплется с неба'], ['wind', 'Ветер', 'Сильный ветер сносит летящих мух'], ['night', 'День/ночь', 'Переключить время суток'], ['auto', 'Авто', 'Погода меняется сама']];
 
   let stroke = null, lastPt = null;
   function apply(sx, sy, first) {
@@ -4831,6 +4859,10 @@ const SB = (() => {
     const inB = (x, y, rr) => Math.hypot(x - w.x, y - w.y) < rr;
     if (['smart', 'dumb', 'chosen', 'unlucky', 'normal'].includes(t)) {
       const list = W.exp && !W.exp.placing ? W.flies.concat(W.exp.studs) : W.flies; let n = 0;
+      /* кисть по гнезду: черта всей колонии, и дети будут такими же */
+      for (const c of W.cols) { if (c.dead || stroke.has(c) || !inB(c.nx, c.ny, r + HOUSE_R[c.lv] * 0.6 + 0.5)) continue; stroke.add(c); const tr = t === 'normal' ? null : t; c.trait = tr; let k = 0;
+        for (const f of W.flies) if (f.col === c && !f.zombie) { stroke.add(f); if (setTrait(f, tr)) k++; }
+        log(`${dot(c)} Колония <b>${c.name}</b> теперь ${tr ? TRAIT[tr].n.toLowerCase() : 'обычная'} — и все её дети тоже`); sfx(tr === 'chosen' ? 'fanfare' : 'ding', null, 0.35); n += 0 * k; }
       for (const f of list) { if (stroke.has(f) || !(inB(f.x, f.y, r + 0.5) || f === fly)) continue; stroke.add(f);
         if (f.role === 'student') { EXP.select(f, t); continue; }
         if (setTrait(f, t === 'normal' ? null : t)) { n++; if (n <= 2) log(t === 'normal' ? `${who(f)} снова обычная` : `${who(f)} теперь ${TRAIT[t].n.toLowerCase()}`); } }
@@ -4842,7 +4874,7 @@ const SB = (() => {
     if (t === 'bless') { for (const f of W.flies) if (inB(f.x, f.y, r)) { f.hp = f.maxHp; reward(f, 0.5); if (f.zombie) { f.zombie = false; f.st = 'idle'; f.stT = 0; f.tgt = null; log(`Бог исцелил ${who(f)} от зомби-заразы`); } }
       for (let yy = Math.floor(w.y - r); yy <= w.y + r; yy++) for (let xx = Math.floor(w.x - r); xx <= w.x + r; xx++) if (inMap(xx, yy) && Math.hypot(xx - w.x, yy - w.y) <= r) rad[yy * MW + xx] *= 0.5; for (const c of W.cols) if (!c.dead && inB(c.nx, c.ny, r + 2) && !stroke.has(c)) { stroke.add(c); c.food += 25; log(`Бог благословил <b>${c.name}</b>: +25 еды`); } fxRing(w.x, w.y, r, '#fff3a0'); if (first) sfx('ding', null, 0.4); return; }
     if (t === 'rage') { let bc = null, bd = r + 8; for (const c of W.cols) { if (c.dead) continue; const d = Math.hypot(c.nx - w.x, c.ny - w.y); if (d < bd) { bd = d; bc = c; } } if (!bc) return toast2('Наведи кисть на гнездо колонии'); if (!W.war) return toast2('Войны запрещены — включи их во вкладке «Мир»');
-      const o = W.cols.filter(x => x !== bc && !x.dead); if (!o.length) return toast2('Нападать не на кого'); bc.raid = o.reduce((a, b) => Math.hypot(a.nx - bc.nx, a.ny - bc.ny) < Math.hypot(b.nx - bc.nx, b.ny - bc.ny) ? a : b); bc.raidT = 40; log(`${dot(bc)} Бог разгневал <b>${bc.name}</b> — они идут на ${bc.raid.name}!`); sfx('airhorn', null, 0.3); godAct(); return; }
+      const o = W.cols.filter(x => x !== bc && !x.dead && x.team !== bc.team); if (!o.length) return toast2('Нападать не на кого'); bc.raid = o.reduce((a, b) => Math.hypot(a.nx - bc.nx, a.ny - bc.ny) < Math.hypot(b.nx - bc.nx, b.ny - bc.ny) ? a : b); bc.raidT = 40; log(`${dot(bc)} Бог разгневал <b>${bc.name}</b> — они идут на ${bc.raid.name}!`); sfx('airhorn', null, 0.3); godAct(); return; }
     if (t === 'spider' || t === 'frog' || t === 'bird') { if (!first) return; spawnPred(t, w.x, w.y); godAct(); return; }
     if (t === 'lightning') { strike(w.x + (first ? 0 : R(-2, 2)), w.y + (first ? 0 : R(-2, 2)), true); if (first) godAct(); return; }
     if (t === 'fire') { let n = 0; for (let k = 0; k < Math.max(1, r * 1.5); k++) { const a = R(0, TAU), d = r * Math.sqrt(Math.random()); if (ignite(idx(clamp(w.x + Math.cos(a) * d, 0, MW - 1), clamp(w.y + Math.sin(a) * d, 0, MH - 1)))) n++; } if (n && first) { godAct(); sfx('whoosh', null, 0.5); } return; }
@@ -4864,7 +4896,15 @@ const SB = (() => {
     if (t === 'fruit') { if (first && !addFood(w.x, w.y, 40, 0.1, 'fruit')) toast2('Сюда нельзя'); sfx('thud', null, 0.3); return; }
     if (t === 'honey') { if (first && !addFood(w.x, w.y, 120, 0, 'honey')) toast2('Сюда нельзя'); sfx('ding', null, 0.3); return; }
     if (t === 'melon' || t === 'dung') { if (!first) return; if (!addFood(w.x, w.y, t === 'melon' ? 160 : 260, t === 'melon' ? 0.15 : 0.4, t)) toast2('Сюда нельзя'); else sfx('thud', null, 0.3); return; }
-    if (t === 'lamp' || t === 'zapper' || t === 'paper' || t === 'fan' || t === 'statue') { if (!first) return; if (!landable(tAt(w.x, w.y))) return toast2('Ставь на сушу'); if (W.items.length >= 60) return toast2('Предметов слишком много');
+    if (t === 'giant') { let n = 0; for (const f of W.flies) if (inB(f.x, f.y, r + 0.4) && !f.giant && !stroke.has(f)) { stroke.add(f); f.giant = true; f.maxHp *= 4; f.hp = f.maxHp; f.mDmg = (f.mDmg || 1) * 3; f.mSpd = (f.mSpd || 1) * 0.8; n++; if (n <= 2) log(`${who(f)} стала великаном!`); } if (n) sfx('thud', null, 0.5); return; }
+    if (t === 'clone') { let n = 0; const src = W.flies.filter(f => inB(f.x, f.y, r + 0.4) && !stroke.has(f) && !f.zombie); for (const f of src) { stroke.add(f); const k = addFly(f.role === 'queen' ? 'worker' : f.role, f.col, f.x + R(-0.8, 0.8), f.y + R(-0.8, 0.8), {g:f.g.slice(), gen:f.gen, trait:f.trait}); if (!k) break; stroke.add(k); n++; } if (n) { if (first) log(`Бог клонировал мух: ${n}`); sfx('zap', null, 0.25); } return; }
+    if (t === 'crown') { if (!first) return; if (!fly || !fly.col || fly.zombie || fly.role === 'student') return toast2('Кликни по мухе'); if (fly.role === 'queen') return toast2('Она уже королева');
+      const used = new Set(W.cols.filter(o => !o.dead).map(o => o.team)); let tm = -1; for (let k = 0; k < 8; k++) if (!used.has(k)) { tm = k; break; } if (tm < 0) return toast2('Все 8 цветов заняты');
+      const old = fly.col, nc = newColony(tm, fly.x, fly.y); nc.food = 15; nc.trait = old.trait;
+      const mates = W.flies.filter(o => o.col === old && o !== fly && o.role !== 'queen' && !o.zombie).sort((a, b) => Math.hypot(a.x - fly.x, a.y - fly.y) - Math.hypot(b.x - fly.x, b.y - fly.y)).slice(0, 3);
+      fly.role = 'queen'; fly.col = nc; fly.maxHp = 18 * (fly.trait === 'chosen' ? 3 : 1); fly.hp = fly.maxHp; fly.life = Math.max(fly.life, fly.age + 900); fly.foe = null; for (const m of mates) { m.col = nc; m.foe = null; flyTo(m, nestSpot(nc)); }
+      log(`${who(fly)} надела корону и увела ${mates.length} мух основать ${dot(nc)}<b>${nc.name}</b>`); sfx('fanfare', null, 0.4); W.team = tm; renderBar(); return; }
+    if (t === 'lamp' || t === 'zapper' || t === 'paper' || t === 'fan' || t === 'statue' || t === 'feeder' || t === 'scarecrow' || t === 'bonfire') { if (!first) return; if (!landable(tAt(w.x, w.y))) return toast2('Ставь на сушу'); if (W.items.length >= 60) return toast2('Предметов слишком много');
       W.items.push({kind:t, x:w.x, y:w.y, a:0, n:0, kills:0}); sfx('step', null, 0.4); if (t === 'statue') log('Мухи воздвигли памятник!'); return; }
     if (t === 'noItem') { W.items = W.items.filter(it => !inB(it.x, it.y, r + 0.6));
       for (let yy = Math.floor(w.y - r); yy <= w.y + r; yy++) for (let xx = Math.floor(w.x - r); xx <= w.x + r; xx++) if (inMap(xx, yy) && Math.hypot(xx + 0.5 - w.x, yy + 0.5 - w.y) <= Math.max(0.7, r) && isWall(tile[yy * MW + xx])) setTile(yy * MW + xx, GRASS); return; }
@@ -4964,7 +5004,7 @@ const SB = (() => {
   const drops = []; for (let k = 0; k < 700; k++) drops.push({x:Math.random(), y:Math.random(), s:R(0.6, 1.2)});
   function drawFly(f, now) {
     const x = wx2s(f.x), y = wy2s(f.y); if (!onScr(x, y)) return;
-    const rs = f.role === 'queen' ? 1.6 : f.role === 'warrior' ? 1.25 : 1, z = cam.z, col = f.role === 'student' ? '#ffd23f' : f.col ? f.col.css : '#fff';
+    const rs = (f.role === 'queen' ? 1.6 : f.role === 'warrior' ? 1.25 : 1) * (f.giant ? 2 : 1), z = cam.z, col = f.role === 'student' ? '#ffd23f' : f.col ? f.col.css : '#fff';
     if (z < 3.2) { const s = Math.max(2, Math.round(z * rs * 0.8)); ctx.fillStyle = f.zombie ? '#8fe060' : col; ctx.fillRect(Math.round(x - s / 2), Math.round(y - s / 2 - f.alt * 2), s, s); return; }
     const k = Math.max(1, Math.round(z * rs / 8)), lift = f.alt * z * 0.9, sy = y - lift;
     if (f.alt > 0.05) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(Math.round(x - 3 * k), Math.round(y - k), 6 * k, 2 * k); }
@@ -4998,7 +5038,7 @@ const SB = (() => {
       if (z >= 4) { ctx.fillStyle = '#fff2a0'; ctx.fillRect(Math.round(sx + z * ((i * 7 + f) % 3) / 3), Math.round(sy + z * 0.2), Math.ceil(z / 3), Math.ceil(z / 3)); } }
     /* еда, яйца, тела */
     const fk = Math.max(1, Math.round(z / 6));
-    for (const fd of W.foods) { const x = wx2s(fd.x), y = wy2s(fd.y); if (!onScr(x, y)) continue; if (z < 3) { ctx.fillStyle = {nectar:'#ff8ab8', fruit:'#d8333a', honey:'#e39418', melon:'#3f8a3a', dung:'#5a3a1e', mush:'#d8403a'}[fd.kind] || '#f4f4ee'; ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2); continue; }
+    for (const fd of W.foods) { const x = wx2s(fd.x), y = wy2s(fd.y); if (!onScr(x, y)) continue; if (z < 3) { ctx.fillStyle = {nectar:'#ff8ab8', fruit:'#d8333a', honey:'#e39418', melon:'#3f8a3a', dung:'#5a3a1e', mush:'#d8403a', cactus:'#3e8a46'}[fd.kind] || '#f4f4ee'; ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2); continue; }
       const L = FOODSPR[fd.kind] || FOODSPR.sugar, im = L[fd.v % L.length], kk = fd.kind === 'honey' || fd.kind === 'melon' || fd.kind === 'dung' ? fk * 2 : fk; ctx.globalAlpha = clamp(0.4 + fd.amt / Math.max(1, fd.max), 0.4, 1); spr(im, x, y, kk); ctx.globalAlpha = 1; }
     /* предметы */
     const ik = Math.max(1, Math.round(z / 5));
@@ -5011,6 +5051,7 @@ const SB = (() => {
         for (let q = 0; q < 16; q++) { const a = it.a + q / 16 * TAU, rr = (q % 2 ? 1.1 : 1.3) * z * 0.9; ctx.fillStyle = cols[q % 2]; ctx.fillRect(Math.round(x + Math.cos(a) * rr - ik / 2), Math.round(y + Math.sin(a) * rr * 0.7 - ik / 2), ik + 1, ik + 1); }
         ctx.fillStyle = it.pair ? 'rgba(20,10,40,.75)' : 'rgba(60,60,60,.4)'; ctx.fillRect(Math.round(x - z * 0.5), Math.round(y - z * 0.35), Math.round(z), Math.round(z * 0.7)); continue; }
       const im = ITEMSPR[it.kind]; if (!im) continue; spr(im, x, y, ik, 1);
+      if (it.kind === 'bonfire') for (let q = 0; q < 9; q++) { const h = ((it.a * 0.7 + q * 1.3) % 6), xx = x + Math.sin(q * 2.1 + it.a * 0.5) * (3 - h * 0.4) * ik; ctx.fillStyle = h < 2 ? '#ffe27a' : h < 4 ? '#ff9a2a' : '#e8452a'; ctx.fillRect(Math.round(xx - ik / 2), Math.round(y - 2 * ik - h * ik), ik + 1, ik + 1); }
       if (it.kind === 'tower' && it.col) { ctx.fillStyle = it.col.css; ctx.fillRect(Math.round(x + ik), Math.round(y - 19 * ik), 3 * ik, 2 * ik); }
       if (it.kind === 'paper' && it.n) { ctx.fillStyle = '#1b1814'; for (let q = 0; q < it.n; q++) ctx.fillRect(Math.round(x - 2 * ik + (q * 3 % 4) * ik), Math.round(y - 14 * ik + q * ik), ik, ik); }
       if (it.kind === 'zapper' && W.light < 0.35 && Math.random() < 0.08) { ctx.fillStyle = '#e8e4ff'; ctx.fillRect(Math.round(x + R(-4, 4) * ik), Math.round(y - R(2, 11) * ik), ik, ik); } }
@@ -5073,6 +5114,9 @@ const SB = (() => {
     const wk = W.wx.kind, sp = W.speed ? 1 : 0;
     if (W.sugarT > 0) { const a = Math.min(1, W.sugarT / 3); for (let k = 0; k < 160; k++) { const d = drops[699 - k]; d.y += dt * 0.35 * d.s * sp; d.x += Math.sin(now + k) * dt * 0.01 * sp; if (d.y > 1) { d.y -= 1; d.x = Math.random(); } const s = d.s > 1 ? 5 : 4;
       ctx.fillStyle = `rgba(250,250,244,${a})`; ctx.fillRect(Math.round(d.x * VW), Math.round(d.y * VH), s, s); ctx.fillStyle = `rgba(200,200,190,${a})`; ctx.fillRect(Math.round(d.x * VW) + s - 1, Math.round(d.y * VH) + 1, 1, s - 1); } }
+    if (wk === 'hail') { for (let k = 0; k < 300; k++) { const d = drops[k]; d.y += dt * 2.2 * d.s * sp; if (d.y > 1) { d.y -= 1; d.x = Math.random(); } const s = d.s > 1 ? 4 : 3; ctx.fillStyle = 'rgba(235,245,255,.9)'; ctx.fillRect(Math.round(d.x * VW), Math.round(d.y * VH), s, s); ctx.fillStyle = 'rgba(160,190,220,.8)'; ctx.fillRect(Math.round(d.x * VW) + 1, Math.round(d.y * VH) + s - 1, s - 1, 1); } ctx.fillStyle = 'rgba(40,50,70,.15)'; ctx.fillRect(0, 0, VW, VH); }
+    if (W.fwT > 0) { if (!W.fw) W.fw = []; if (Math.random() < dt * 4) { const cx = R(0.15, 0.85) * VW, cy = R(0.12, 0.5) * VH, col = pick(['#ff4d6d', '#ffd23f', '#4dd2ff', '#8aff5a', '#ff9a3c', '#c08aff']); for (let q = 0; q < 26; q++) { const a = q / 26 * TAU, v = R(60, 140); W.fw.push({x:cx, y:cy, vx:Math.cos(a) * v, vy:Math.sin(a) * v, t:0, col}); } sndAt('boom', cam.x, cam.y, 0.06); } }
+    if (W.fw && W.fw.length) { for (const p of W.fw) { p.t += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 60 * dt; p.vx *= 0.98; } W.fw = W.fw.filter(p => p.t < 1.4); for (const p of W.fw) { ctx.globalAlpha = 1 - p.t / 1.4; ctx.fillStyle = p.col; ctx.fillRect(Math.round(p.x), Math.round(p.y), 3, 3); } ctx.globalAlpha = 1; }
     if (W.rainbowT > 0) { const a = Math.min(1, W.rainbowT / 2, (10 - W.rainbowT) / 1.5) * 0.35; ['#ff4d4d', '#ff9a3c', '#ffe14d', '#5ad15a', '#4da6ff', '#6a5aff', '#b05aff'].forEach((c, i) => { ctx.strokeStyle = c; ctx.globalAlpha = a; ctx.lineWidth = Math.max(8, VW / 90); ctx.beginPath(); ctx.arc(VW / 2, VH * 1.1, VW * 0.55 - i * ctx.lineWidth, Math.PI, TAU); ctx.stroke(); }); ctx.globalAlpha = 1; }
     if (wk === 'rain' || wk === 'storm' || wk === 'acid') { const n = wk === 'rain' ? 380 : 650; ctx.strokeStyle = wk === 'acid' ? 'rgba(170,240,90,.55)' : wk === 'storm' ? 'rgba(170,190,225,.55)' : 'rgba(180,200,235,.45)'; ctx.lineWidth = 1; ctx.beginPath();
       for (let k = 0; k < n; k++) { const d = drops[k]; d.y += dt * 1.6 * d.s * sp; d.x += dt * W.wind.x * 0.02 * sp; if (d.y > 1) { d.y -= 1; d.x = Math.random(); } if (d.x > 1) d.x -= 1; if (d.x < 0) d.x += 1; const x = d.x * VW, y = d.y * VH; ctx.moveTo(x, y); ctx.lineTo(x - W.wind.x * 2 - 2, y + 10 * d.s); } ctx.stroke(); ctx.fillStyle = wk === 'storm' ? 'rgba(20,26,40,.25)' : 'rgba(30,40,60,.12)'; ctx.fillRect(0, 0, VW, VH); }
@@ -5083,6 +5127,7 @@ const SB = (() => {
     const L = W.light; if (L < 0.98) { const a = 1 - L, dusk = L > 0.05 && L < 0.55 ? (0.5 - Math.abs(L - 0.3) * 2) : 0;
       ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = `rgb(${Math.round(255 - a * 170 + dusk * 30)},${Math.round(255 - a * 160 - dusk * 30)},${Math.round(255 - a * 110 - dusk * 70)})`; ctx.fillRect(0, 0, VW, VH);
       ctx.globalCompositeOperation = 'lighter'; const glow = (x, y, r, c) => { if (!onScr(x, y, r)) return; const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, c); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); };
+      for (const it of W.items) if (it.kind === 'bonfire') glow(wx2s(it.x), wy2s(it.y) - 3 * ik, 9 * z, `rgba(255,150,60,${0.6 * a})`);
       for (const it of W.items) if (it.kind === 'lamp' || it.kind === 'zapper') glow(wx2s(it.x), wy2s(it.y) - 3 * ik, 7 * z, it.kind === 'lamp' ? `rgba(255,220,130,${0.6 * a})` : `rgba(150,130,255,${0.6 * a})`);
       for (const c of W.cols) if (!c.dead) { glow(wx2s(c.nx), wy2s(c.ny), (3 + c.lv * 1.5) * z, `rgba(255,190,90,${0.5 * a})`); for (const h of c.huts) glow(wx2s(h.x), wy2s(h.y), 2.5 * z, `rgba(255,190,90,${0.35 * a})`); }
       let gl = 0; for (const i of burning) { if (gl++ > 220) break; const x = i % MW, y = i / MW | 0; if (x < X0 || x > X1 || y < Y0 || y > Y1) continue; glow(wx2s(x + 0.5), wy2s(y + 0.5), 3 * z, `rgba(255,120,40,${0.35 * a})`); }
@@ -5222,6 +5267,14 @@ const SB = (() => {
       if (id === 'meteorRain') { for (const [x, y] of [[2, 2], [7, 1], [5, 6]]) { line(x - 2, y - 2, x, y, O); rect(x, y, 2, 2, '#7a5236'); } rect(0, 10, 12, 2, '#5c9a3a'); return; }
       if (id === 'rainbow') { ['#ff4d4d', '#ffb03c', '#ffe14d', '#5ad15a', '#4da6ff', '#9a5aff'].forEach((c, i) => { for (let k = 0; k <= 12; k++) { const a = Math.PI + k / 12 * Math.PI, r = 5.6 - i * 0.8; px(6 + Math.cos(a) * r, 11 + Math.sin(a) * r, c); } }); return; }
       if (id === 'birds') { for (const [x, y] of [[2, 3], [7, 2], [4, 7], [9, 7]]) { px(x, y, Dk); px(x - 1, y - 1, Dk); px(x + 1, y - 1, Dk); px(x - 2, y, Dk); px(x + 2, y, Dk); } return; }
+      if (id === 'giant') { g.drawImage(FLYBASE, 0, 0, 11, 9, -2, -1, 16, 13); line(9, 0, 11, 2, Wt); px(10, 0, Wt); return; }
+      if (id === 'clone') { g.drawImage(FLYBASE, 0, 0, 11, 9, -1, -1, 9, 8); g.drawImage(FLYBASE, 0, 0, 11, 9, 4, 5, 9, 8); rect(9, 0, 3, 1, Cy); rect(10, -1, 1, 3, Cy); return; }
+      if (id === 'crown') { rect(1, 6, 10, 4, Y); px(1, 3, Y); px(1, 4, Y); px(1, 5, Y); px(5, 2, Y); px(5, 3, Y); rect(5, 4, 2, 2, Y); px(6, 2, Y); px(10, 3, Y); px(10, 4, Y); px(10, 5, Y); px(3, 8, Rd); px(6, 8, '#4da6ff'); px(9, 8, Rd); return; }
+      if (id === 'hail') { cloudD('#a8b4c4', 0); for (const [x, y] of [[2, 8], [6, 10], [9, 8], [4, 11]]) rect(x, y, 2, 2, Wt); return; }
+      if (id === 'eclipse') { ell(6, 6, 5, 5, Y); ell(6.8, 5.6, 4.4, 4.4, Dk); return; }
+      if (id === 'festival') { for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; line(6 + Math.cos(a) * 1.5, 5 + Math.sin(a) * 1.5, 6 + Math.cos(a) * 4.5, 5 + Math.sin(a) * 4.5, k % 2 ? '#ff4d6d' : Y); } line(6, 11, 6, 9, O); return; }
+      if (id === 'truce') { rect(3, 1, 1, 11, '#9a6a3a'); rect(4, 1, 7, 5, Wt); rect(4, 5, 7, 1, '#c8ced6'); return; }
+      if (id === 'golden') { g.drawImage(FLYSPR[1][0][0], 0, 1); px(0, 0, Y); px(11, 0, Y); px(11, 11, Y); return; }
       if (id === 'noItem') { line(2, 2, 10, 10, Rd); line(10, 2, 2, 10, Rd); line(3, 2, 10, 9, Rd); line(9, 2, 2, 9, Rd); return; }
       if (id === 'genCont') { rect(0, 0, 12, 12, '#2c6cc0'); ell(6, 6, 4.5, 3.6, '#5cb04a'); ell(7, 5, 1.5, 1.2, '#8a8680'); return; }
       if (id === 'genIslands') { rect(0, 0, 12, 12, '#2c6cc0'); for (const [x, y, r] of [[3, 3, 1.8], [8, 2.5, 1.4], [8.5, 8, 2], [3, 9, 1.3]]) ell(x, y, r, r, '#5cb04a'); return; }
@@ -5370,7 +5423,7 @@ const SB = (() => {
     const d = Math.floor(W.t / DAY) + 1, hr = ((W.t / DAY) % 1) * 24 + 6, hh = Math.floor(hr % 24), mm = Math.floor((hr % 1) * 60);
     $('#sbClock').textContent = `День ${d} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · ${WX[W.wx.kind]}`;
     $('#sbPop').textContent = `Мух ${W.flies.length}`; $('#sbColN').textContent = `Колоний ${W.cols.filter(c => !c.dead).length}`;
-    $('#sbCols').innerHTML = W.cols.length ? '<div style="font-weight:700;margin-bottom:4px">Колонии</div>' + W.cols.map((c, i) => `<div class="sbcol ${c.dead ? 'dead' : ''}" data-col="${i}"><div class="h"><span><i class="dt" style="background:${c.css}"></i>${c.name}</span><span>${c.dead ? 'погибла' : LV[c.lv] + ' · ' + c.lv}</span></div>${c.dead ? '' : `<div class="s">королев ${c.q} · рабочих ${c.wk} · воинов ${c.wr} · яиц ${c.eg} · еды ${Math.floor(c.food)} · земли ${c.area}${c.raid ? ' · война с ' + c.raid.name : ''}</div>`}</div>`).join('')
+    $('#sbCols').innerHTML = W.cols.length ? '<div style="font-weight:700;margin-bottom:4px">Колонии</div>' + W.cols.map((c, i) => `<div class="sbcol ${c.dead ? 'dead' : ''}" data-col="${i}"><div class="h"><span><i class="dt" style="background:${c.css}"></i>${c.name}</span><span>${c.dead ? 'погибла' : (c.trait ? TRAIT[c.trait].n + ' · ' : '') + LV[c.lv] + ' · ' + c.lv}</span></div>${c.dead ? '' : `<div class="s">королев ${c.q} · рабочих ${c.wk} · воинов ${c.wr} · яиц ${c.eg} · еды ${Math.floor(c.food)} · земли ${c.area}${c.raid ? ' · война с ' + c.raid.name : ''}</div>`}</div>`).join('')
       : '<div class="help" style="margin:0">Мир пуст. Вкладка <b>Жизнь</b> → Королева → клик по суше. Или вкладка <b>Мир</b> → Четыре колонии.</div>';
     const g = $('#sbGraph').getContext('2d'), w = 250, h = 56; g.clearRect(0, 0, w, h); let mx = 5; for (const c of W.cols) for (const v of c.hist) mx = Math.max(mx, v);
     for (const c of W.cols) { if (c.hist.length < 2) continue; g.strokeStyle = c.css; g.lineWidth = 2; g.beginPath(); c.hist.forEach((v, i) => { const px = i / 89 * w, py = h - 3 - v / mx * (h - 8); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); }
@@ -5393,7 +5446,7 @@ const SB = (() => {
       const c = W.selCol, key = 'c' + c.name + c.lv;
       if (key !== cardKey || force) { cardKey = key; card.innerHTML = `<div style="display:flex;justify-content:space-between"><b><i class="dt" style="background:${c.css}"></i>${c.name}</b><button class="btn" data-c="close" style="padding:0 8px">×</button></div><div class="kv" id="sbCkv"></div><div class="row" style="margin:8px 0 0;gap:4px"><button class="btn pri" data-c="queen">Королева</button><button class="btn" data-c="goto">К гнезду</button></div>`; }
       card.hidden = false;
-      $('#sbCkv').innerHTML = `<span>Поселение</span><b>${LV[c.lv]} (ур. ${c.lv})</b><span>Мух</span><b>${c.n} · яиц ${c.eg}</b><span>Рабочих / воинов</span><b>${c.wk} / ${c.wr}</b><span>Еды</span><b>${Math.floor(c.food)}</b><span>Территория</span><b>${c.area} клеток</b><span>Стройка</span><b>${c.lv < 5 ? Math.floor(c.build) + ' / ' + LV_BUILD[c.lv + 1] : 'готово'}</b><span>Родилось / погибло</span><b>${c.births} / ${c.deaths}</b><span>Побед</span><b>${c.kills}</b>${c.raid ? `<span>Война</span><b>с ${c.raid.name}</b>` : ''}`;
+      $('#sbCkv').innerHTML = `<span>Поселение</span><b>${LV[c.lv]} (ур. ${c.lv})</b>${c.trait ? `<span>Черта</span><b>${TRAIT[c.trait].n}</b>` : ''}<span>Мух</span><b>${c.n} · яиц ${c.eg}</b><span>Рабочих / воинов</span><b>${c.wk} / ${c.wr}</b><span>Еды</span><b>${Math.floor(c.food)}</b><span>Территория</span><b>${c.area} клеток</b><span>Стройка</span><b>${c.lv < 5 ? Math.floor(c.build) + ' / ' + LV_BUILD[c.lv + 1] : 'готово'}</b><span>Родилось / погибло</span><b>${c.births} / ${c.deaths}</b><span>Побед</span><b>${c.kills}</b>${c.raid ? `<span>Война</span><b>с ${c.raid.name}</b>` : ''}`;
     } else { card.hidden = true; cardKey = ''; }
   }
   function renderAll() { renderBar(); renderSpeed(); renderSide(true); renderExp(); }
