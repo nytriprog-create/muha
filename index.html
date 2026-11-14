@@ -4612,7 +4612,7 @@ const SB = (() => {
     const w = s2w(sx, sy), t = W.tool, pw = P[t], team = W.team, r = pw && pw.brush ? BRUSH[W.brush] : 1; if (!stroke) stroke = new Set();
     if (W.exp && W.exp.placing) { if (first) { if (landable(tAt(w.x, w.y))) EXP.place(w.x, w.y); else toast2('Корзину ставь на сушу'); } return; }
     const fly = flyAt(sx, sy);
-    if (t === 'inspect') { if (!first) return; if (fly) { W.sel = fly; W.selCol = null; sfx('ding', null, 0.15); } else { let bc = null, bd = 6; for (const c of W.cols) { if (c.dead) continue; const d = Math.hypot(c.nx - w.x, c.ny - w.y); if (d < bd) { bd = d; bc = c; } } W.selCol = bc; W.sel = null; } renderSide(true); return; }
+    if (t === 'inspect') { if (!first) return; if (fly) { W.sel = fly; W.selCol = null; sfx('ding', null, 0.15); } else { let bc = null, bd = 6; for (const c of W.cols) { if (c.dead) continue; const d = Math.hypot(c.nx - w.x, c.ny - w.y); if (d < bd) { bd = d; bc = c; } } W.selCol = bc; W.sel = null; if (bc) W.team = bc.team; } renderSide(true); return; }
     if (!inMap(w.x, w.y)) return;
     if (pw.terr !== undefined) { paintTerrain(w.x, w.y, r, pw.terr); return; }
     const inB = (x, y, rr) => Math.hypot(x - w.x, y - w.y) < rr;
@@ -4644,7 +4644,15 @@ const SB = (() => {
     if (pw.team) {
       if (!first && !pw.hold) return;
       if (!landable(tAt(w.x, w.y))) { if (first) toast2('Мух селят на сушу'); return; }
-      let c = W.cols.find(c => c.team === team && !c.dead), fresh = false; if (!c) { c = newColony(team, w.x, w.y); fresh = true; }
+      /* к какой колонии подселить: та, на чьей земле или у чьего гнезда кликнули; иначе — новая (королева) или ближайшая выбранного цвета */
+      let c = null, fresh = false, bd = 1e9;
+      for (const o of W.cols) { if (o.dead) continue; const d = Math.hypot(o.nx - w.x, o.ny - w.y); if (d < HOUSE_R[o.lv] + 4 && d < bd) { bd = d; c = o; } }
+      if (!c) { const ow = owner[idx(w.x, w.y)]; if (ow >= 0 && W.cols[ow] && !W.cols[ow].dead) c = W.cols[ow]; }
+      if (!c && t !== 'queen' && t !== 'colony') { bd = 1e9; for (const o of W.cols) { if (o.dead || o.team !== team) continue; const d = Math.hypot(o.nx - w.x, o.ny - w.y); if (d < bd) { bd = d; c = o; } } }
+      if (!c) { let tm = team; const used = new Set(W.cols.filter(o => !o.dead).map(o => o.team)); if (used.has(tm)) for (let k = 0; k < 8; k++) if (!used.has(k)) { tm = k; break; }
+        if (tm !== team) { W.team = tm; renderBar(); toast2(`Этот цвет занят — новая колония будет: ${TEAMS[tm].name.toLowerCase()}`); }
+        c = newColony(tm, w.x, w.y); fresh = true; }
+      if (first && !fresh && c.team !== W.team) { W.team = c.team; renderBar(); }
       const spots = t === 'colony' ? [['queen', 1], ['worker', 4], ['warrior', 2]] : [[t, 1]];
       for (const [role, k] of spots) for (let i = 0; i < k; i++) { const q = i ? findLand(w.x, w.y, 1.5) || w : w, f = addFly(role, c, q.x, q.y); if (!f) return toast2('Мир переполнен — больше мух не поместится'); if (role === 'queen') log(`${dot(c)} Появилась королева ${who(f)}`); if (!fresh && Math.hypot(w.x - c.nx, w.y - c.ny) > 8) flyTo(f, nestSpot(c)); }
       if (t === 'colony') c.food += 10;
