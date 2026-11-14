@@ -307,6 +307,7 @@ h1 em{font-style:normal;color:var(--acc)}
     <div class="modes">
       <button class="mode" id="mObs"><b>Наблюдение</b></button>
       <button class="mode" id="mSb"><b>Песочница</b></button>
+      <button class="mode" id="mWs"><b>Мастерская</b></button>
     </div>
     </div>
     <button class="mi" data-s="modeDev">Помощь разработчику<u>›</u></button>
@@ -2762,9 +2763,9 @@ function setMode(m) {
   const isDev = m === 'play' && G.lv && G.lv.key === 'dev';
   $('#brainBox').hidden = !(store.settings.brain || isDev); $('#brainBox').classList.toggle('dev', !!isDev); BPOS = null;
   if (m !== 'lab') hideLabObjs(); else { labBodies.visible = labWings.visible = true; }
-  OBS.show(m === 'obs'); SB.show(m === 'sb'); if (typeof LOBBY !== 'undefined') LOBBY.show(m === 'menu'); $('#achScr').hidden = true; if (m !== 'play') flyBlob.visible = false;
+  OBS.show(m === 'obs'); SB.show(m === 'sb'); if (typeof WS !== 'undefined') WS.show(m === 'ws'); if (typeof LOBBY !== 'undefined') LOBBY.show(m === 'menu'); $('#achScr').hidden = true; if (m !== 'play') flyBlob.visible = false;
   if (m !== 'play') { $('#win').hidden = true; $('#meme').hidden = true; }
-  flyObj.visible = m !== 'lab' && m !== 'obs' && m !== 'sb'; for (const id of WPN) wModels[id].visible = false; if (m !== 'play') { hideProj(); G.spin = 0; }
+  flyObj.visible = m !== 'lab' && m !== 'obs' && m !== 'sb' && m !== 'ws'; for (const id of WPN) wModels[id].visible = false; if (m !== 'play') { hideProj(); G.spin = 0; }
   if (m === 'menu') { renderLevels(); renderDev(); initMenuWorld(); }
   if (m !== 'play' && buzz) buzz.g.gain.setTargetAtTime(0, AC.currentTime, 0.05);
   if (hiss) hiss.gain.setTargetAtTime(0, AC.currentTime, 0.05); if (hum) hum.gain.setTargetAtTime(0, AC.currentTime, 0.05);
@@ -2801,6 +2802,7 @@ addEventListener('keydown', e => {
   }
   if (G.mode === 'obs') { if (e.code === 'Escape') setMode('menu'); return; }
   if (G.mode === 'sb') return SB.key(e);
+  if (G.mode === 'ws') return WS.key(e);
   if (G.mode === 'play') {
     if (/^Digit[1-7]$/.test(e.code)) { const A = availW(), id = A[+e.code.slice(5) - 1]; if (id) setWeapon(id); }
     else if (e.code === 'KeyB') { store.settings.brain = !store.settings.brain; $('#brainBox').hidden = !store.settings.brain; $('#oBrain').checked = store.settings.brain; saveStore(); }
@@ -2889,6 +2891,8 @@ function frame(now) {
     OBS.frame(dt); ring.visible = false;
   } else if (G.mode === 'sb') {
     SB.frame(dt); ring.visible = false;
+  } else if (G.mode === 'ws') {
+    WS.frame(dt); ring.visible = false;
   } else if (G.mode === 'lab') {
     labFrame(dt); drawLab();
     menuT += dt * 0.05; camera.position.set(0.9 + Math.sin(menuT) * 1.7, 2.5, 0.2 + Math.cos(menuT) * 1.9); camera.lookAt(-0.4, 0.5, -0.6);
@@ -2896,7 +2900,7 @@ function frame(now) {
   } else {
     LOBBY.frame(dt); ring.visible = false;
   }
-  if (G.mode === 'menu') LOBBY.render(); else if (G.mode !== 'sb') draw();
+  if (G.mode === 'menu') LOBBY.render(); else if (G.mode !== 'sb' && G.mode !== 'ws') draw();
 }
 /* ===== ЗРЕНИЕ МУХИ: два глаза по 110°, ч/б, 40×20 «фасеток» на глаз, 20 раз в секунду =====
    Из картинки считаем, сколько её внезапно потемнело (растущая тень — LPLC2/LC4) и сколько движется,
@@ -5670,9 +5674,347 @@ const SB = (() => {
   return {show, frame, mouse, wheel, key, W, EXP, step, apply, quick, clearAll, runEvent, logs, setTool, cam, P, genWorld, render, strike, setWeather, tile, owner, spawnPred, meteorHit, s2w, wx2s, wy2s};
 })();
 
+/* ================= МАСТЕРСКАЯ: создай муху, построй арену, задай правила и обучи ================= */
+const WS = (() => {
+  const AW = 32, AH = 20, DTW = 1 / 30, POP = 20, EP_T = 25;
+  /* каналы чувств: от чего муха может «чуять» направление */
+  const CH = ['sugar', 'poison', 'ball', 'basket', 'zoneA', 'zoneB', 'threat', 'wall'];
+  const NC = CH.length, NEX = NC * 2 + 2;
+  const ENTS = {sugar:'Сахар', poison:'Яд', ball:'Мячик', basket:'Корзина', slipper:'Тапок', fan:'Вентилятор'};
+  const EVENTS = {eat:'съела сахар', poison:'тронула яд', grab:'взяла мячик', bring:'принесла мячик в корзину', hit:'попала под тапок', wall:'врезалась в стену', zoneA:'в синей зоне (за секунду)', zoneB:'в розовой зоне (за секунду)', move:'бегает (за секунду)', still:'стоит на месте (за секунду)'};
+  const COLORS = [['#4d473f', 'Серая'], ['#f2cf5a', 'Золотая'], ['#6a9a40', 'Зелёная'], ['#4a7ad8', 'Синяя'], ['#d84a4a', 'Красная'], ['#9a5ad8', 'Фиолетовая']];
+  const GENES = [['smell', 'Нюх'], ['loom', 'Зрение'], ['wind', 'Чувство ветра'], ['lr', 'Обучаемость'], ['jump', 'Смелость'], ['fwd', 'Скорость']];
+  const pick = a => a[Math.floor(Math.random() * a.length)];
+  let D = null; const dims = () => D || (D = S.dims());
+  const shade = (h, k) => { const n = parseInt(h.slice(1), 16), f = c => clamp(Math.round(c * k), 0, 255); return `rgb(${f(n >> 16)},${f(n >> 8 & 255)},${f(n & 255)})`; };
+
+  /* ---------- работа: арена + правила + муха ---------- */
+  function blankWork() {
+    const t = new Array(AW * AH).fill(0); for (let x = 0; x < AW; x++) { t[x] = 1; t[(AH - 1) * AW + x] = 1; } for (let y = 0; y < AH; y++) { t[y * AW] = 1; t[y * AW + AW - 1] = 1; }
+    return {name:'Моя работа', tiles:t, ents:[{k:'sugar', x:24, y:10}], start:{x:6, y:10}, rules:[{ev:'eat', v:2}], fly:{name:'Жужа', col:0}, champ:null, gen:0, hist:[]};
+  }
+  function newGenome() { const g0 = S.randomGenome(), d = dims(), g = new Float32Array(d.GL + NEX); g.set(g0.subarray(0, d.GL)); for (let k = d.GL; k < g.length; k++) g[k] = gauss() * 0.3; g[d.GL + NC * 2 + 1] = 0.3; return g; }
+  let WK = blankWork();
+  /* ---------- состояние ---------- */
+  const st = {open:false, tab:'fly', tool:'wall', live:null, run:true, speed:1, painting:false, lastCell:-1, msg:'', msgT:0, ui:null, cv:null, ctx:null, cs:20, ox:0, oy:0, sprites:{}};
+
+  /* ---------- спрайт мухи ---------- */
+  const ROWS = [['...........', '....l.l.l..', '..WW..l....', '.WWBWtte...', 'bbBbBttee..', '.WWBWtte...', '..WW..l....', '....l.l.l..', '...........'],
+    ['..WW.......', '..WWW.l.l..', '...WW.l....', '..bBbtte...', 'bbBbBttee..', '..bBbtte...', '...WW.l....', '..WWW.l.l..', '..WW.......']];
+  function flySprite(ci, fr) { const key = ci + '_' + fr; if (st.sprites[key]) return st.sprites[key];
+    const c0 = COLORS[ci] ? COLORS[ci][0] : COLORS[0][0], pal = {b:shade(c0, 0.6), B:c0, t:shade(c0, 1.35), e:'#c4291c', l:'#17140f', W:'rgba(206,222,242,.85)'}, rows = ROWS[fr];
+    const c = document.createElement('canvas'); c.width = 11; c.height = 9; const g = c.getContext('2d');
+    for (let y = 0; y < 9; y++) for (let x = 0; x < 11; x++) { const ch = rows[y][x]; if (ch !== '.') { g.fillStyle = pal[ch]; g.fillRect(x, y, 1, 1); } }
+    return st.sprites[key] = c; }
+
+  /* ---------- арена ---------- */
+  const T = (x, y) => (x < 0 || y < 0 || x >= AW || y >= AH) ? 1 : WK.tiles[(y | 0) * AW + (x | 0)];
+  const isWallAt = (x, y) => T(x, y) === 1;
+
+  /* ---------- одна муха в арене ---------- */
+  function makeFly(g, learn) {
+    const d = dims(), br = new S.Brain(g), ex = Float32Array.from(g.subarray(d.GL, d.GL + NEX));
+    const ents = WK.ents.map(e => ({...e, x:e.x + 0.5, y:e.y + 0.5, hx:e.x + 0.5, hy:e.y + 0.5, off:0, ph:Math.random() * 4, carried:false}));
+    return {g, br, ex, learn, x:WK.start.x + 0.5, y:WK.start.y + 0.5, h:R(0, TAU), v:0, carry:null, score:0, t:0, bT:0, ents, cd:{}, el:new Float32Array(NEX), noise:0, noiseT:0, dop:0, pain:0, turnB:0, fwdB:0, wing:0, log:[], stat:{}, jump:0};
+  }
+  function sense(f) {
+    const L = new Float32Array(NC), Rr = new Float32Array(NC);
+    const add = (c, x, y, k) => { const dx = x - f.x, dy = y - f.y, d = Math.hypot(dx, dy); if (d > 14) return; const s = k * Math.exp(-d / 5), side = Math.sin(angDiff(f.h, Math.atan2(dy, dx)));
+      L[c] += s * clamp(0.6 - side, 0, 1.2); Rr[c] += s * clamp(0.6 + side, 0, 1.2); };
+    for (const e of f.ents) {
+      if (e.k === 'sugar' && e.off <= 0) add(0, e.x, e.y, 1);
+      else if (e.k === 'poison') add(1, e.x, e.y, 1);
+      else if (e.k === 'ball' && !e.carried) add(2, e.x, e.y, 1);
+      else if (e.k === 'basket') add(3, e.x, e.y, f.carry ? 1.4 : 0.5);
+      else if (e.k === 'slipper') { const warn = e.ph > 3 && e.ph < 3.8; if (warn) add(6, e.x, e.y, 2); }
+    }
+    /* зоны: ближайшая клетка зоны впереди-слева и впереди-справа */
+    for (const [c, z] of [[4, 2], [5, 3]]) for (let r = 1; r <= 6; r += 1.5) for (const s of [-1, 1]) { const a = f.h + s * 0.6, x = f.x + Math.cos(a) * r, y = f.y + Math.sin(a) * r; if (T(x, y) === z) (s < 0 ? L : Rr)[c] += 0.35 / r; }
+    for (const s of [-1, 1]) for (let r = 0.5; r <= 3; r += 0.5) { const a = f.h + s * 0.5; if (isWallAt(f.x + Math.cos(a) * r, f.y + Math.sin(a) * r)) { (s < 0 ? L : Rr)[7] += (3.5 - r) / 3; break; } }
+    return [L, Rr];
+  }
+  function event(f, ev, k = 1) {
+    let r = 0; for (const ru of WK.rules) if (ru.ev === ev) r += ru.v * k;
+    f.stat[ev] = (f.stat[ev] || 0) + k;
+    if (r) { f.score += r; reinforce(f, r * (ev === 'zoneA' || ev === 'zoneB' || ev === 'move' || ev === 'still' ? 0.3 : 1)); }
+    return r;
+  }
+  /* обучение при жизни: мозг (дофамин/боль) + рулевые связи по следу активности */
+  function reinforce(f, r) {
+    f.br.reinforce(clamp(r, -3, 3) * 0.02); if (r > 0) f.dop = Math.min(1.5, f.dop + r * 0.3); else f.pain = Math.min(1.5, f.pain - r * 0.3);
+    if (!f.learn) return; const eta = 0.08 * (0.3 + f.br.lr * 4);
+    for (let k = 0; k < NEX; k++) f.ex[k] = clamp(f.ex[k] + eta * clamp(r, -3, 3) * f.el[k], -4, 4);
+  }
+  function stepFly(f, dt) {
+    f.t += dt; const b = f.br;
+    const [L, Rr] = sense(f);
+    f.bT += dt;
+    if (f.bT >= 0.1) { const I = b.inp; I.fill(0); I[0] = L[6] * b.kLoom; I[1] = Rr[6] * b.kLoom; I[2] = L[0] * b.kSmell; I[3] = Rr[0] * b.kSmell;
+      for (const e of f.ents) if (e.k === 'fan') { const d = Math.hypot(e.x - f.x, e.y - f.y); if (d < 5) { I[6] = I[7] = (5 - d) / 5 * b.kWind; } }
+      I[8] = f.dop * 1.5; I[9] = f.pain * 1.5; b.step(true); f.dop *= 0.85; f.pain *= 0.85; f.bT = 0;
+      f.bTurn = (b.mean(dims().OUTN.turnR) - b.mean(dims().OUTN.turnL)) * b.kTurn; f.bFwd = (b.mean(dims().OUTN.fwd) - b.mean(dims().OUTN.back)) * b.kFwd;
+      const jump = Math.max(b.mean(dims().OUTN.jumpL), b.mean(dims().OUTN.jumpR)); f.jd = jump - (f.jb || 0); f.jb = (f.jb || 0) + (jump - (f.jb || 0)) * 0.5; }
+    /* исследование: шум в повороте и скорости, след для обучения */
+    if ((f.noiseT -= dt) <= 0) { f.noiseT = R(0.2, 0.6); f.noise = gauss() * 0.8; f.noiseF = gauss() * 0.3; }
+    const ex = f.ex; let turn = ex[NC * 2] + f.noise * 0.6 + (f.bTurn || 0) * 0.15, fwd = 0.35 + ex[NC * 2 + 1] + (f.noiseF || 0) * 0.5 + (f.bFwd || 0) * 0.1;
+    for (let c = 0; c < NC; c++) { const df = Rr[c] - L[c], sm = L[c] + Rr[c]; turn += ex[c] * df * 3; fwd += ex[NC + c] * sm; }
+    const decay = Math.exp(-dt / 1.5);
+    for (let c = 0; c < NC; c++) { f.el[c] = f.el[c] * decay + (Rr[c] - L[c]) * f.noise * dt; f.el[NC + c] = f.el[NC + c] * decay + (L[c] + Rr[c]) * (f.noiseF || 0) * dt; }
+    f.el[NC * 2] = f.el[NC * 2] * decay + f.noise * dt; f.el[NC * 2 + 1] = f.el[NC * 2 + 1] * decay + (f.noiseF || 0) * dt;
+    fwd = clamp(fwd, 0, 1);
+    if (f.jd > b.thJump && L[6] + Rr[6] > 0.3) { f.h += (L[6] > Rr[6] ? 1 : -1) * 1.2; fwd = 1.6; f.jd = 0; }   /* прыжок прочь от тени */
+    f.h += clamp(turn, -3, 3) * 2.2 * dt;
+    let sp = (0.4 + 4 * fwd) * dt;
+    for (const e of f.ents) if (e.k === 'fan') { const d = Math.hypot(e.x - f.x, e.y - f.y); if (d < 5 && d > 0.1) { f.x += (f.x - e.x) / d * (5 - d) * 0.25 * dt; f.y += (f.y - e.y) / d * (5 - d) * 0.25 * dt; } }
+    const nx = f.x + Math.cos(f.h) * sp, ny = f.y + Math.sin(f.h) * sp;
+    if (isWallAt(nx, ny)) { if ((f.cd.wall || 0) <= f.t) { f.cd.wall = f.t + 0.6; event(f, 'wall'); } f.h += Math.PI * R(0.5, 1.2); sp = 0; }
+    else { f.x = nx; f.y = ny; }
+    if (isWallAt(f.x, f.y)) { f.x = WK.start.x + 0.5; f.y = WK.start.y + 0.5; }
+    f.v = sp / dt; f.wing += dt * (f.v > 1 ? 30 : 0);
+    /* события */
+    const tz = T(f.x, f.y); if (tz === 2) event(f, 'zoneA', dt); else if (tz === 3) event(f, 'zoneB', dt);
+    if (f.v > 2) event(f, 'move', dt); else if (f.v < 0.6) event(f, 'still', dt);
+    for (const e of f.ents) {
+      const d = Math.hypot(e.x - f.x, e.y - f.y);
+      if (e.k === 'sugar') { if (e.off > 0) e.off -= dt; else if (d < 0.7) { e.off = 4; event(f, 'eat'); } }
+      else if (e.k === 'poison') { if (d < 0.7 && (f.cd.p || 0) <= f.t) { f.cd.p = f.t + 1.5; event(f, 'poison'); } }
+      else if (e.k === 'ball') { if (e.carried) { e.x = f.x + Math.cos(f.h) * 0.45; e.y = f.y + Math.sin(f.h) * 0.45; } else if (!f.carry && d < 0.6) { e.carried = true; f.carry = e; event(f, 'grab'); } }
+      else if (e.k === 'slipper') { e.ph += dt; if (e.ph >= 4) { e.ph = 0; if (d < 1.6) event(f, 'hit'); e.hitT = 0.25; } if (e.hitT > 0) e.hitT -= dt; }
+    }
+    if (f.carry) for (const e of f.ents) if (e.k === 'basket' && Math.hypot(e.x - f.carry.x, e.y - f.carry.y) < 0.9) { const bl = f.carry; bl.carried = false; bl.x = bl.hx; bl.y = bl.hy; f.carry = null; event(f, 'bring'); break; }
+  }
+
+  /* ---------- эволюция: копии мухи соревнуются по правилам ---------- */
+  function champ() { if (!WK.champ) WK.champ = newGenome(); return WK.champ; }
+  function mutateG(g) { const d = dims(), c = g.slice(); S.mutate(c.subarray(0, d.GL), 0.4); for (let k = d.GL; k < c.length; k++) if (Math.random() < 0.4) c[k] = clamp(c[k] + gauss() * 0.35, -4, 4); return c; }
+  function evalG(g) { const f = makeFly(g, true); for (let t = 0; t < EP_T; t += DTW) stepFly(f, DTW); return f; }
+  let pop = null;
+  function generations(n) {
+    const t0 = performance.now(); let done = 0;
+    if (!pop) { const c = champ(); pop = [c.slice()]; while (pop.length < POP) pop.push(mutateG(c)); }
+    for (; done < n && performance.now() - t0 < 4500; done++) {
+      const res = pop.map(g => ({g, f:evalG(g)})).sort((a, b) => b.f.score - a.f.score);
+      const best = res[0]; WK.gen++; WK.hist.push({b:best.f.score, a:res.reduce((s, r) => s + r.f.score, 0) / res.length}); if (WK.hist.length > 300) WK.hist.shift();
+      /* чемпион передаёт выученное при жизни как стартовые связи */
+      const g = best.g.slice(), d = dims(); g.set(best.f.ex, d.GL); WK.champ = g; WK.best = best.f.score; WK.bestStat = best.f.stat;
+      const top = res.slice(0, POP / 4).map(r => r.g); pop = [g.slice()]; while (pop.length < POP) pop.push(mutateG(pick(top)));
+    }
+    if (st.live) restartLive(); return done;
+  }
+
+  /* ---------- живая муха ---------- */
+  function restartLive() { st.live = makeFly(champ().slice(), true); }
+  function praise(v) { if (!st.live) restartLive(); reinforce(st.live, v * 2); st.live.score += 0; flash(v > 0 ? 'Похвалили!' : 'Поругали!'); sfx(v > 0 ? 'ding' : 'slap', null, 0.3); }
+  function keepLearned() { if (!st.live) return; const g = st.live.g.slice(), d = dims(); g.set(st.live.ex, d.GL); WK.champ = g; pop = null; flash('Выученное сохранено в мухе'); }
+
+  /* ---------- сохранение работ ---------- */
+  const b64 = a => { const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); return btoa(s); };
+  const unb64 = s => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Float32Array(u.buffer); };
+  function pack(w) { return {v:1, name:w.name, tiles:w.tiles.join(''), ents:w.ents, start:w.start, rules:w.rules, fly:w.fly, champ:w.champ ? b64(w.champ) : null, gen:w.gen, hist:w.hist.slice(-120), best:w.best || 0}; }
+  function unpack(o) {
+    if (!o || !o.tiles || o.tiles.length !== AW * AH) throw new Error('bad');
+    const w = {name:String(o.name || 'Работа').slice(0, 40), tiles:[...o.tiles].map(Number), ents:(o.ents || []).filter(e => ENTS[e.k]).map(e => ({k:e.k, x:clamp(e.x | 0, 0, AW - 1), y:clamp(e.y | 0, 0, AH - 1)})), start:o.start || {x:2, y:2},
+      rules:(o.rules || []).filter(r => EVENTS[r.ev]).map(r => ({ev:r.ev, v:clamp(+r.v || 0, -5, 5)})), fly:{name:String((o.fly && o.fly.name) || 'Жужа').slice(0, 20), col:clamp((o.fly && o.fly.col) | 0, 0, COLORS.length - 1)}, champ:null, gen:o.gen | 0, hist:o.hist || [], best:o.best || 0};
+    if (o.champ) { const g = unb64(o.champ); if (g.length === dims().GL + NEX) w.champ = g; }
+    return w;
+  }
+  const LKEY = 'flyWorks1';
+  function loadList() { try { return JSON.parse(localStorage.getItem(LKEY)) || []; } catch (e) { return []; } }
+  function saveList(L) { try { localStorage.setItem(LKEY, JSON.stringify(L)); return true; } catch (e) { flash('Не хватило места для сохранения'); return false; } }
+  function saveWork() { const L = loadList(), p = pack(WK), i = L.findIndex(x => x.name === WK.name); if (i >= 0) L[i] = p; else L.unshift(p); if (L.length > 30) L.length = 30; if (saveList(L)) { flash('Работа сохранена'); sfx('ding', null, 0.3); } render(); }
+  function openWork(o) { try { WK = unpack(o); pop = null; restartLive(); flash(`Открыта: ${WK.name}`); render(); } catch (e) { flash('Не получилось открыть работу'); } }
+  const toCode = () => 'FLYW1:' + btoa(unescape(encodeURIComponent(JSON.stringify(pack(WK)))));
+  function fromCode(s) { s = (s || '').trim(); const m = s.indexOf('FLYW1:'); if (m < 0) throw new Error('code'); return JSON.parse(decodeURIComponent(escape(atob(s.slice(m + 6).replace(/\s+/g, ''))))); }
+  function exportFile() { const blob = new Blob([JSON.stringify(pack(WK))], {type:'application/json'}), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (WK.name || 'work').replace(/[^\wа-яё -]/gi, '') + '.flywork.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+
+  /* ---------- готовые примеры ---------- */
+  function example(kind) {
+    const w = blankWork(); w.ents = []; const set = (x, y, v) => { w.tiles[y * AW + x] = v; };
+    if (kind === 'maze') { w.name = 'Сахар за стенкой'; for (let y = 1; y < 15; y++) set(11, y, 1); for (let y = 5; y < 19; y++) set(21, y, 1); w.ents = [{k:'sugar', x:28, y:3}, {k:'sugar', x:28, y:16}]; w.start = {x:4, y:10}; w.rules = [{ev:'eat', v:3}, {ev:'wall', v:-0.3}]; }
+    if (kind === 'ball') { w.name = 'Принеси мячик'; w.ents = [{k:'ball', x:22, y:6}, {k:'ball', x:24, y:14}, {k:'basket', x:6, y:10}]; w.start = {x:10, y:10}; w.rules = [{ev:'grab', v:1}, {ev:'bring', v:4}]; }
+    if (kind === 'slipper') { w.name = 'Не попадись под тапок'; w.ents = [{k:'sugar', x:16, y:10}, {k:'slipper', x:16, y:10}, {k:'sugar', x:8, y:5}, {k:'sugar', x:24, y:15}, {k:'slipper', x:24, y:15}]; w.start = {x:4, y:4}; w.rules = [{ev:'eat', v:1}, {ev:'hit', v:-3}]; }
+    if (kind === 'zone') { w.name = 'Сиди в синей зоне'; for (let y = 3; y < 9; y++) for (let x = 20; x < 28; x++) set(x, y, 2); for (let y = 12; y < 18; y++) for (let x = 4; x < 12; x++) set(x, y, 3); w.start = {x:4, y:4}; w.rules = [{ev:'zoneA', v:1}, {ev:'zoneB', v:-1}]; }
+    if (kind === 'poison') { w.name = 'Сахар, а не яд'; w.ents = [{k:'sugar', x:8, y:5}, {k:'poison', x:24, y:5}, {k:'poison', x:8, y:15}, {k:'sugar', x:24, y:15}, {k:'fan', x:16, y:10}]; w.start = {x:16, y:3}; w.rules = [{ev:'eat', v:2}, {ev:'poison', v:-3}]; }
+    return w;
+  }
+
+  /* ---------- интерфейс ---------- */
+  function flash(s) { st.msg = s; st.msgT = 2.2; }
+  const css = document.createElement('style'); css.textContent = `
+#wsUI{position:fixed;inset:0;z-index:30;display:flex;background:#16120e;color:var(--ink);font-size:13px}
+#wsSide{width:340px;flex:none;display:flex;flex-direction:column;border-right:1px solid var(--line);background:rgba(0,0,0,.25)}
+#wsTabs{display:flex;flex-wrap:wrap;gap:4px;padding:10px 10px 6px}#wsTabs button{flex:1;padding:7px 4px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-weight:600;font-size:12px}
+#wsTabs button.on{background:var(--acc);color:#1b1408;border-color:transparent}
+#wsPanel{flex:1;overflow:auto;padding:6px 12px 14px}#wsPanel h3{margin:10px 0 6px;font-size:14px}#wsPanel .help{color:var(--mute);font-size:12px;line-height:1.45;margin:4px 0 8px}
+#wsPanel input[type=text],#wsPanel textarea,#wsPanel select{width:100%;box-sizing:border-box;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--ink);font:inherit}
+#wsPanel textarea{height:70px;font-size:11px;resize:vertical}
+.wsRow{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}.wsRow .btn{padding:7px 10px;font-size:12px}
+.wsGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.wsGrid button{padding:7px 4px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:12px}
+.wsGrid button.on{outline:2px solid var(--acc)}
+.wsSw{width:28px;height:28px;border-radius:8px;border:2px solid transparent;cursor:pointer}.wsSw.on{border-color:#fff}
+.wsSl{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:6px;margin:4px 0}.wsSl input{width:100%}
+.wsRule{display:grid;grid-template-columns:1fr 92px 28px;gap:5px;margin:5px 0;align-items:center}.wsRule button{padding:5px 0;border-radius:6px;background:rgba(255,255,255,.08);border:1px solid var(--line)}
+.wsWork{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 8px;border-radius:8px;background:rgba(255,255,255,.05);margin:4px 0}.wsWork span{color:var(--mute);font-size:11px}
+.wsStat{display:grid;grid-template-columns:1fr auto;gap:2px 10px;color:var(--mute);margin:6px 0}.wsStat b{color:var(--ink);text-align:right}
+#wsMain{flex:1;position:relative;min-width:0}#wsCv{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
+#wsTop{position:absolute;left:12px;top:10px;right:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;pointer-events:none}#wsTop>*{pointer-events:auto}
+#wsTop .btn{padding:7px 12px;font-size:12px}#wsScore{padding:6px 12px;border-radius:10px;font-weight:700}
+#wsMsg{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);padding:8px 14px;border-radius:10px;background:rgba(0,0,0,.75);font-weight:600;pointer-events:none;transition:opacity .3s}
+@media (max-width:800px){#wsUI{flex-direction:column-reverse}#wsSide{width:auto;height:46%}}`;
+  document.head.appendChild(css);
+
+  function buildUI() {
+    const ui = document.createElement('div'); ui.id = 'wsUI'; ui.hidden = true;
+    ui.innerHTML = `<div id="wsSide"><div id="wsTabs"></div><div id="wsPanel"></div></div>
+      <div id="wsMain"><canvas id="wsCv"></canvas><div id="wsTop"><button class="btn" id="wsBack">Меню</button><button class="btn" id="wsRun"></button><button class="btn" id="wsSpd"></button><button class="btn pri" id="wsGood">Хвалить</button><button class="btn" id="wsBad">Ругать</button><span class="glass" id="wsScore"></span></div><div id="wsMsg"></div></div>`;
+    document.body.appendChild(ui); st.ui = ui; st.cv = ui.querySelector('#wsCv'); st.ctx = st.cv.getContext('2d');
+    ui.querySelector('#wsBack').onclick = () => setMode('menu');
+    ui.querySelector('#wsRun').onclick = () => { st.run = !st.run; render(); };
+    ui.querySelector('#wsSpd').onclick = () => { st.speed = st.speed === 1 ? 4 : st.speed === 4 ? 16 : 1; render(); };
+    ui.querySelector('#wsGood').onclick = () => praise(1); ui.querySelector('#wsBad').onclick = () => praise(-1);
+    st.cv.addEventListener('mousedown', e => { st.painting = true; st.lastCell = -1; paintAt(e, true); });
+    st.cv.addEventListener('mousemove', e => { if (st.painting) paintAt(e, false); });
+    addEventListener('mouseup', () => { st.painting = false; });
+    st.cv.addEventListener('touchstart', e => { const t = e.touches[0]; st.painting = true; st.lastCell = -1; paintAt(t, true); e.preventDefault(); }, {passive:false});
+    st.cv.addEventListener('touchmove', e => { if (st.painting) paintAt(e.touches[0], false); e.preventDefault(); }, {passive:false});
+    st.cv.addEventListener('touchend', () => { st.painting = false; });
+  }
+  function cellAt(e) { const r = st.cv.getBoundingClientRect(), x = Math.floor((e.clientX - r.left - st.ox) / st.cs), y = Math.floor((e.clientY - r.top - st.oy) / st.cs); return x >= 0 && y >= 0 && x < AW && y < AH ? {x, y} : null; }
+  function paintAt(e, first) {
+    const c = cellAt(e); if (!c) return; const i = c.y * AW + c.x;
+    if (st.tab !== 'arena') { if (first) flash('Чтобы строить, открой вкладку «Арена»'); return; }
+    const t = st.tool; if (!first && i === st.lastCell) return; st.lastCell = i;
+    if (t === 'wall' || t === 'zoneA' || t === 'zoneB' || t === 'floor') { WK.tiles[i] = {wall:1, zoneA:2, zoneB:3, floor:0}[t]; if (t === 'wall') WK.ents = WK.ents.filter(e => e.x !== c.x || e.y !== c.y); }
+    else if (t === 'erase') { WK.tiles[i] = 0; WK.ents = WK.ents.filter(e => e.x !== c.x || e.y !== c.y); }
+    else if (t === 'start') { if (!first) return; if (WK.tiles[i] === 1) WK.tiles[i] = 0; WK.start = {x:c.x, y:c.y}; }
+    else if (ENTS[t]) { if (!first) return; if (WK.tiles[i] === 1) WK.tiles[i] = 0; WK.ents = WK.ents.filter(e => e.x !== c.x || e.y !== c.y); if (WK.ents.length >= 40) return flash('Слишком много предметов'); WK.ents.push({k:t, x:c.x, y:c.y}); }
+    pop = null; restartLive();
+  }
+  const TABS = [['fly', 'Муха'], ['arena', 'Арена'], ['rules', 'Правила'], ['train', 'Обучение'], ['works', 'Работы']];
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
+  function render() {
+    if (!st.ui) return; const P = st.ui.querySelector('#wsPanel');
+    st.ui.querySelector('#wsTabs').innerHTML = TABS.map(([k, n]) => `<button data-t="${k}" class="${st.tab === k ? 'on' : ''}">${n}</button>`).join('');
+    st.ui.querySelectorAll('#wsTabs button').forEach(b => b.onclick = () => { st.tab = b.dataset.t; render(); });
+    st.ui.querySelector('#wsRun').textContent = st.run ? 'Пауза' : 'Пуск'; st.ui.querySelector('#wsSpd').textContent = '×' + st.speed;
+    const g = champ(), d = dims(), gv = k => g[d.GI_X + S.X[k]];
+    if (st.tab === 'fly') {
+      P.innerHTML = `<h3>Твоя муха</h3><input type="text" id="wsFName" maxlength="20" value="${esc(WK.fly.name)}">
+        <div class="wsRow">${COLORS.map(([c, n], i) => `<div class="wsSw ${WK.fly.col === i ? 'on' : ''}" data-c="${i}" title="${n}" style="background:${c}"></div>`).join('')}</div>
+        <h3>Гены</h3>${GENES.map(([k, n]) => `<div class="wsSl"><span>${n}</span><input type="range" min="-2" max="2" step="0.1" value="${gv(k).toFixed(1)}" data-g="${k}"></div>`).join('')}
+        <div class="wsRow"><button class="btn" id="wsRnd">Случайная муха</button><button class="btn" id="wsNew">Начать с нуля</button></div>
+        <p class="help">Гены задают врождённое: насколько муха чует сахар, видит тень тапка, чувствует ветер, как быстро учится, насколько пуглива и быстра. Остальное она выучит сама — по правилам, которые ты придумаешь.</p>`;
+      P.querySelector('#wsFName').oninput = e => { WK.fly.name = e.target.value || 'Жужа'; };
+      P.querySelectorAll('.wsSw').forEach(s => s.onclick = () => { WK.fly.col = +s.dataset.c; render(); });
+      P.querySelectorAll('[data-g]').forEach(s => s.oninput = () => { g[d.GI_X + S.X[s.dataset.g]] = +s.value; pop = null; restartLive(); });
+      P.querySelector('#wsRnd').onclick = () => { const n = newGenome(); n.set(g.subarray(d.GL), d.GL); WK.champ = n; pop = null; restartLive(); render(); };
+      P.querySelector('#wsNew').onclick = () => { WK.champ = newGenome(); WK.gen = 0; WK.hist = []; WK.best = 0; pop = null; restartLive(); flash('Муха забыла всё выученное'); render(); };
+    } else if (st.tab === 'arena') {
+      const tools = [['wall', 'Стена'], ['erase', 'Ластик'], ['start', 'Старт'], ['zoneA', 'Синяя зона'], ['zoneB', 'Розовая зона'], ['floor', 'Пол'], ...Object.entries(ENTS)];
+      P.innerHTML = `<h3>Строй арену</h3><p class="help">Выбери предмет и кликай по полю. Стены и зоны можно рисовать, зажав кнопку.</p>
+        <div class="wsGrid">${tools.map(([k, n]) => `<button data-k="${k}" class="${st.tool === k ? 'on' : ''}">${n}</button>`).join('')}</div>
+        <div class="wsRow"><button class="btn" id="wsClear">Очистить арену</button></div>
+        <p class="help"><b>Сахар</b> исчезает, когда его съели, и вырастает снова. <b>Яд</b> пахнет, но вредный. <b>Мячик</b> муха берёт и носит. <b>Корзина</b> — куда нести мячик. <b>Тапок</b> раз в 4 секунды бьёт по клетке: перед ударом видна тень. <b>Вентилятор</b> сдувает муху.</p>`;
+      P.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { st.tool = b.dataset.k; render(); });
+      P.querySelector('#wsClear').onclick = () => { const w = blankWork(); WK.tiles = w.tiles; WK.ents = []; pop = null; restartLive(); };
+    } else if (st.tab === 'rules') {
+      P.innerHTML = `<h3>Чему учить</h3><p class="help">Правила решают, за что муха получает награду (плюс) и боль (минус). Она будет стараться набирать очки — так её можно научить чему угодно в арене.</p>
+        <div id="wsRules">${WK.rules.map((r, i) => `<div class="wsRule"><select data-i="${i}" data-f="ev">${Object.entries(EVENTS).map(([k, n]) => `<option value="${k}" ${r.ev === k ? 'selected' : ''}>Когда ${n}</option>`).join('')}</select>
+          <select data-i="${i}" data-f="v">${[5, 3, 2, 1, 0.5, -0.5, -1, -2, -3, -5].map(v => `<option value="${v}" ${+r.v === v ? 'selected' : ''}>${v > 0 ? 'награда +' + v : 'боль ' + v}</option>`).join('')}</select><button data-del="${i}">×</button></div>`).join('')}</div>
+        <div class="wsRow"><button class="btn" id="wsAddR">Добавить правило</button></div>`;
+      P.querySelectorAll('select[data-i]').forEach(s => s.onchange = () => { const r = WK.rules[+s.dataset.i]; if (s.dataset.f === 'ev') r.ev = s.value; else r.v = +s.value; pop = null; });
+      P.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { WK.rules.splice(+b.dataset.del, 1); pop = null; render(); });
+      P.querySelector('#wsAddR').onclick = () => { if (WK.rules.length < 10) WK.rules.push({ev:'eat', v:1}); render(); };
+    } else if (st.tab === 'train') {
+      const bs = WK.bestStat || {}, stats = Object.keys(EVENTS).filter(k => bs[k]).map(k => `<span>${EVENTS[k]}</span><b>${k === 'zoneA' || k === 'zoneB' || k === 'move' || k === 'still' ? bs[k].toFixed(0) + ' с' : bs[k] | 0}</b>`).join('');
+      P.innerHTML = `<h3>Обучение</h3><p class="help"><b>Тренировка</b>: ${POP} копий твоей мухи проходят арену по ${EP_T} секунд, лучшая передаёт гены и выученное дальше. <b>Хвалить/Ругать</b> — учить живую муху самому, как собаку кликером.</p>
+        <div class="wsRow"><button class="btn pri" data-n="10">Тренировать ×10</button><button class="btn" data-n="50">×50</button><button class="btn" data-n="200">×200</button></div>
+        <div class="wsRow"><button class="btn" id="wsKeep">Запомнить выученное</button><button class="btn" id="wsRe">Перезапустить муху</button></div>
+        <div class="wsStat"><span>Поколение</span><b>${WK.gen}</b><span>Лучший счёт за забег</span><b>${(WK.best || 0).toFixed(1)}</b>${stats}</div>
+        <canvas id="wsChart" width="300" height="90" style="width:100%;height:90px;background:rgba(0,0,0,.3);border-radius:8px"></canvas>`;
+      P.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { b.textContent = 'Учится…'; setTimeout(() => { const n = generations(+b.dataset.n); flash(`Пройдено поколений: ${n}`); render(); }, 30); });
+      P.querySelector('#wsKeep').onclick = () => { keepLearned(); render(); };
+      P.querySelector('#wsRe').onclick = () => { restartLive(); };
+      chart(P.querySelector('#wsChart'));
+    } else if (st.tab === 'works') {
+      const L = loadList();
+      P.innerHTML = `<h3>Эта работа</h3><input type="text" id="wsWName" maxlength="40" value="${esc(WK.name)}">
+        <div class="wsRow"><button class="btn pri" id="wsSave">Сохранить</button><button class="btn" id="wsExp">Скачать файл</button><button class="btn" id="wsImpF">Открыть файл</button><input type="file" id="wsFile" accept=".json,application/json" hidden></div>
+        <h3>Поделиться кодом</h3><p class="help">Скопируй код и отправь другу — он вставит его у себя и получит арену, правила и обученную муху.</p>
+        <div class="wsRow"><button class="btn" id="wsCopy">Скопировать код</button><button class="btn" id="wsPaste">Открыть код</button></div><textarea id="wsCode" placeholder="Вставь сюда код работы FLYW1:…"></textarea>
+        <h3>Мои работы</h3>${L.length ? L.map((w, i) => `<div class="wsWork"><div><b>${esc(w.name)}</b><br><span>${esc(w.fly && w.fly.name || '')} · поколение ${w.gen | 0} · счёт ${(+w.best || 0).toFixed(1)}</span></div><div class="wsRow" style="margin:0"><button class="btn" data-o="${i}">Открыть</button><button class="btn" data-x="${i}">×</button></div></div>`).join('') : '<p class="help">Пока пусто.</p>'}
+        <h3>Примеры</h3>${[['maze', 'Сахар за стенкой'], ['ball', 'Принеси мячик'], ['slipper', 'Не попадись под тапок'], ['zone', 'Сиди в синей зоне'], ['poison', 'Сахар, а не яд']].map(([k, n]) => `<div class="wsWork"><b>${n}</b><button class="btn" data-ex="${k}">Открыть</button></div>`).join('')}
+        <h3>Работы игроков</h3><p class="help">Общая лента работ появится, когда к игре подключат базу данных. Пока работами делятся кодом или файлом.</p>`;
+      P.querySelector('#wsWName').oninput = e => { WK.name = e.target.value || 'Моя работа'; };
+      P.querySelector('#wsSave').onclick = saveWork; P.querySelector('#wsExp').onclick = exportFile;
+      const fi = P.querySelector('#wsFile'); P.querySelector('#wsImpF').onclick = () => fi.click();
+      fi.onchange = () => { const f = fi.files[0]; if (!f) return; f.text().then(t => openWork(JSON.parse(t))).catch(() => flash('Это не файл работы')); };
+      P.querySelector('#wsCopy').onclick = () => { const c = toCode(); P.querySelector('#wsCode').value = c; try { navigator.clipboard.writeText(c).then(() => flash('Код скопирован'), () => flash('Код в поле ниже — скопируй его')); } catch (e) { flash('Код в поле ниже — скопируй его'); } };
+      P.querySelector('#wsPaste').onclick = () => { try { openWork(fromCode(P.querySelector('#wsCode').value)); } catch (e) { flash('Код не подошёл'); } };
+      P.querySelectorAll('[data-o]').forEach(b => b.onclick = () => openWork(L[+b.dataset.o]));
+      P.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { L.splice(+b.dataset.x, 1); saveList(L); render(); });
+      P.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => { WK = example(b.dataset.ex); pop = null; restartLive(); flash(`Пример: ${WK.name}. Открой «Обучение»`); render(); });
+    }
+  }
+  function chart(cv) { if (!cv) return; const g = cv.getContext('2d'), w = cv.width, h = cv.height, H = WK.hist; g.clearRect(0, 0, w, h); if (H.length < 2) { g.fillStyle = 'rgba(255,255,255,.4)'; g.font = '12px system-ui'; g.fillText('Здесь будет график обучения', 10, 50); return; }
+    let mn = 0, mx = 1; for (const p of H) { mn = Math.min(mn, p.a, p.b); mx = Math.max(mx, p.b); }
+    for (const [k, col] of [['a', 'rgba(255,255,255,.4)'], ['b', '#ffc94a']]) { g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); H.forEach((p, i) => { const x = i / (H.length - 1) * (w - 4) + 2, y = h - 4 - (p[k] - mn) / (mx - mn) * (h - 8); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); } }
+
+  /* ---------- рисование арены ---------- */
+  function draw() {
+    const cv = st.cv, ctx = st.ctx, dpr = Math.min(2, devicePixelRatio || 1), W0 = cv.clientWidth, H0 = cv.clientHeight;
+    if (cv.width !== Math.round(W0 * dpr) || cv.height !== Math.round(H0 * dpr)) { cv.width = Math.round(W0 * dpr); cv.height = Math.round(H0 * dpr); }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#16120e'; ctx.fillRect(0, 0, W0, H0);
+    const cs = st.cs = Math.max(8, Math.floor(Math.min((W0 - 24) / AW, (H0 - 70) / AH))), ox = st.ox = Math.floor((W0 - cs * AW) / 2), oy = st.oy = Math.floor(56 + (H0 - 56 - cs * AH) / 2);
+    for (let y = 0; y < AH; y++) for (let x = 0; x < AW; x++) { const t = WK.tiles[y * AW + x], X = ox + x * cs, Y = oy + y * cs;
+      ctx.fillStyle = t === 1 ? '#5a4232' : t === 2 ? '#2e5c9a' : t === 3 ? '#a8487a' : ((x + y) & 1 ? '#d9c8a6' : '#e4d4b2'); ctx.fillRect(X, Y, cs, cs);
+      if (t === 1) { ctx.fillStyle = '#6e5440'; ctx.fillRect(X, Y, cs, Math.max(2, cs / 5)); ctx.fillStyle = '#3e2c20'; ctx.fillRect(X, Y + cs - Math.max(2, cs / 6), cs, Math.max(2, cs / 6)); } }
+    const f = st.live, ents = f ? f.ents : WK.ents.map(e => ({...e, x:e.x + 0.5, y:e.y + 0.5, off:0, ph:0}));
+    const P = (x, y) => [ox + x * cs, oy + y * cs], u = cs / 8;
+    { const [sx, sy] = P(WK.start.x + 0.5, WK.start.y + 0.5); ctx.strokeStyle = 'rgba(40,160,80,.8)'; ctx.lineWidth = 2; ctx.strokeRect(sx - cs / 2 + 2, sy - cs / 2 + 2, cs - 4, cs - 4); }
+    for (const e of ents) { const [x, y] = P(e.x, e.y);
+      if (e.k === 'sugar') { if (e.off > 0) continue; ctx.fillStyle = '#fbfaf4'; ctx.fillRect(x - 3 * u, y - 3 * u, 6 * u, 6 * u); ctx.fillStyle = '#c8c8be'; ctx.fillRect(x + 2 * u, y - 2 * u, u, 5 * u); }
+      else if (e.k === 'poison') { ctx.fillStyle = '#5bd13a'; ctx.beginPath(); ctx.arc(x, y, 3 * u, 0, TAU); ctx.fill(); ctx.fillStyle = '#1b3a10'; ctx.fillRect(x - 2 * u, y - u, u, u); ctx.fillRect(x + u, y - u, u, u); ctx.fillRect(x - u, y + u, 2 * u, u); }
+      else if (e.k === 'ball') { ctx.fillStyle = '#ff8a1f'; ctx.beginPath(); ctx.arc(x, y, 2.6 * u, 0, TAU); ctx.fill(); ctx.fillStyle = '#ffd0a0'; ctx.fillRect(x - u, y - 2 * u, u, u); }
+      else if (e.k === 'basket') { ctx.fillStyle = '#8a5a30'; ctx.fillRect(x - 3.5 * u, y - 2 * u, 7 * u, 5 * u); ctx.fillStyle = '#b07a40'; for (let k = -3; k < 4; k += 2) ctx.fillRect(x + k * u, y - 2 * u, u, 5 * u); ctx.fillStyle = '#5a3a20'; ctx.fillRect(x - 3.5 * u, y - 3 * u, 7 * u, u); }
+      else if (e.k === 'fan') { const a = performance.now() / 80; ctx.fillStyle = '#3a3a44'; ctx.fillRect(x - u, y, 2 * u, 4 * u); ctx.fillStyle = '#c8d4e0'; for (let b = 0; b < 3; b++) { const aa = a + b * TAU / 3; ctx.fillRect(x + Math.cos(aa) * 2 * u - u, y + Math.sin(aa) * 2 * u - u, 2 * u, 2 * u); } ctx.strokeStyle = 'rgba(200,230,255,.25)'; ctx.beginPath(); ctx.arc(x, y, 5 * cs, 0, TAU); ctx.stroke(); }
+      else if (e.k === 'slipper') { const warn = e.ph > 3 && e.ph < 4, k = warn ? (e.ph - 3) : 0; ctx.fillStyle = `rgba(0,0,0,${0.12 + k * 0.4})`; ctx.beginPath(); ctx.arc(x, y, 1.6 * cs * (0.6 + k * 0.4), 0, TAU); ctx.fill();
+        if (e.hitT > 0) { ctx.fillStyle = '#e2557f'; ctx.fillRect(x - 1.4 * cs, y - 0.8 * cs, 2.8 * cs, 1.6 * cs); } else { ctx.fillStyle = 'rgba(226,85,127,.5)'; ctx.fillRect(x - 2 * u, y - 4 * u - (1 - k) * cs, 4 * u, 6 * u); } }
+    }
+    if (f) { const [x, y] = P(f.x, f.y), k = Math.max(1, cs / 9), img = flySprite(WK.fly.col, f.v > 1 && (f.wing | 0) % 2 ? 1 : 0);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(f.h); ctx.drawImage(img, -5.5 * k * 1.3, -4.5 * k * 1.3, 11 * k * 1.3, 9 * k * 1.3); ctx.restore();
+      if (f.dop > 0.2) { ctx.fillStyle = `rgba(255,220,80,${Math.min(0.8, f.dop)})`; ctx.font = `700 ${Math.round(cs * 0.7)}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('+', x, y - cs * 0.8); }
+      if (f.pain > 0.2) { ctx.fillStyle = `rgba(255,80,90,${Math.min(0.8, f.pain)})`; ctx.font = `700 ${Math.round(cs * 0.7)}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('−', x, y - cs * 0.8); }
+      ctx.fillStyle = '#fff'; ctx.font = `600 ${Math.max(10, Math.round(cs * 0.45))}px system-ui`; ctx.textAlign = 'center'; ctx.fillText(WK.fly.name, x, y + cs * 1.1); }
+    const sc = st.ui.querySelector('#wsScore'); if (sc) sc.textContent = f ? `${WK.fly.name}: ${f.score.toFixed(1)} очков · поколение ${WK.gen}` : '';
+    const m = st.ui.querySelector('#wsMsg'); m.textContent = st.msg; m.style.opacity = st.msgT > 0 ? 1 : 0;
+  }
+
+  /* ---------- режим ---------- */
+  function show(on) {
+    if (on && !st.ui) buildUI();
+    if (!st.ui) return; st.ui.hidden = !on; st.open = on;
+    if (on) { if (!st.live) restartLive(); render(); }
+  }
+  function frame(dt) {
+    if (!st.open) return;
+    if (st.run && st.live) { const n = Math.min(40, Math.round(dt * st.speed / DTW) || 1); for (let i = 0; i < n; i++) stepFly(st.live, DTW); if (st.live.t > 120) { const s = st.live.score; restartLive(); if (st.speed === 1) flash(`Забег окончен: ${s.toFixed(1)} очков`); } }
+    if (st.msgT > 0) st.msgT -= dt;
+    draw();
+  }
+  function key(e) {
+    if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
+    if (e.code === 'Escape') setMode('menu'); else if (e.code === 'Space') { e.preventDefault(); st.run = !st.run; render(); }
+    else if (e.code === 'KeyG') praise(1); else if (e.code === 'KeyB') praise(-1);
+  }
+  return {show, frame, key, generations, get work() { return WK; }, get live() { return st.live; }, example:k => { WK = example(k); pop = null; restartLive(); render(); }, toCode, fromCode, openWork};
+})();
+
+$('#mWs').onclick = () => { initAudio(); setMode('ws'); };
 applyLocation(store.settings.loc); tuneEnv(scene); renderLocs();
 renderWbar(); setMode('menu'); requestAnimationFrame(frame);
-window.FLY3D = {S, G, LB, store, SQ, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, EYE, LOBBY, tickHunt, drawHunt, composer, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
+window.FLY3D = {S, G, LB, store, SQ, WS, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, EYE, LOBBY, tickHunt, drawHunt, composer, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
   snap(w, h) { const ow = innerWidth, oh = innerHeight; renderer.setSize(w, h, false); composer.setSize(w, h); gtao.setSize(w, h); bloom.resolution.set(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); draw(); const url = renderer.domElement.toDataURL('image/jpeg', 0.88); resize(); return url; },
   step(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) tickHunt(); },
   stepV(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) { tickHunt(); drawHunt(DT); } },   /* то же, но с отрисовкой — работает зрение мухи */
