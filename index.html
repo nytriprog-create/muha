@@ -94,6 +94,83 @@ h1 em{font-style:normal;color:var(--acc)}
 #brainBox.pain{animation:pain 1.4s ease-out}
 #eyesFx{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse 62% 70% at 50% 50%,transparent 55%,rgba(0,0,0,.55) 85%,#000 100%);mix-blend-mode:multiply}
 #eyesFx::after{content:'';position:absolute;inset:0;opacity:.13;background-image:radial-gradient(circle at 50% 50%,transparent 55%,rgba(0,0,0,.9) 75%);background-size:9px 8px}
+#menu{justify-content:flex-start;background:linear-gradient(90deg,rgba(8,10,14,.28) 0%,rgba(8,10,14,.12) 40%,rgba(8,10,14,0) 60%)}
+#menu .panel{width:min(600px,100%);padding:30px 30px 24px;border-radius:22px;background:linear-gradient(160deg,rgba(18,22,30,.42),rgba(8,10,14,.26));border:1px solid rgba(255,255,255,.13);box-shadow:0 20px 60px rgba(0,0,0,.35),inset 0 1px 0 rgba(255,255,255,.12);backdrop-filter:blur(4px) saturate(1.2);-webkit-backdrop-filter:blur(4px) saturate(1.2);text-shadow:0 1px 3px rgba(0,0,0,.55)}
+#menu .logo{font-size:50px;letter-spacing:-1.5px;background:linear-gradient(180deg,#fff 30%,#ffe7b8);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 3px 18px rgba(255,190,90,.35));text-shadow:none}
+#menu .logo em{background:linear-gradient(180deg,#ffd76a,#ff9f43);-webkit-background-clip:text;background-clip:text;color:transparent}
+#menu .tagline{margin-top:4px;font-size:12px;letter-spacing:2.6px;text-transform:uppercase;color:rgba(255,226,170,.75)}
+#menu .tabs{margin-top:16px}
+#menu .tab,#menu .loc{background:rgba(255,255,255,.06);backdrop-filter:none}
+#menu .tab.on{background:rgba(255,201,74,.18)}
+#menu .lead{font-size:13px;line-height:1.55;color:rgba(244,239,230,.72);margin:10px 0 16px}
+#menu .lv{position:relative;overflow:hidden;padding:14px 14px 12px 16px;border-radius:14px;background:linear-gradient(160deg,rgba(255,255,255,.09),rgba(255,255,255,.02));border:1px solid rgba(255,255,255,.12);transition:transform .15s,box-shadow .15s,border-color .15s}
+#menu .lv::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:currentColor;opacity:.9}
+#menu .lv1{color:var(--good)}#menu .lv2{color:var(--acc)}#menu .lv3{color:var(--bad)}#menu .lv4{color:#9fd3ff}
+#menu .lv span{color:rgba(244,239,230,.7)}#menu .lv i{color:rgba(244,239,230,.45)}
+#menu .lv:hover{transform:translateY(-3px);border-color:currentColor;box-shadow:0 10px 30px -10px currentColor}
+.resume{width:100%;margin-top:12px;padding:12px}
+.modes{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.mode{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:11px 11px 10px;border-radius:14px;text-align:left;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);transition:transform .15s,background .15s,border-color .15s}
+.mode:hover{transform:translateY(-2px);background:rgba(255,255,255,.12);border-color:rgba(255,255,255,.28)}
+.mode i{font-style:normal;font-size:22px;line-height:1;margin-bottom:5px}
+.mode b{font-size:13px}
+.mode span{font-size:10.5px;color:rgba(244,239,230,.55);line-height:1.3}
+.more{margin-top:14px;border-top:1px solid rgba(255,255,255,.1);padding-top:10px}
+.more summary{cursor:pointer;font-size:12.5px;color:rgba(244,239,230,.6);list-style:none}
+.more summary::-webkit-details-marker{display:none}
+.more summary::after{content:' ▾'}
+.more[open] summary::after{content:' ▴'}
+.more summary:hover{color:var(--ink)}
+@media (max-width:700px){.modes{grid-template-columns:repeat(2,1fr)}#menu .logo{font-size:38px}}
+/* компактнее: меньше места занимают панели, больше видно моря */
+#menu .panel{width:min(470px,100%);padding:20px 20px 16px;border-radius:18px;font-size:12.5px}
+#menu .logo{font-size:36px}#menu .tagline{font-size:10px;letter-spacing:2px}
+#menu .tabs{margin-top:10px}#menu .tab{padding:6px 10px;font-size:12px}#menu .loc{padding:4px 10px;font-size:11.5px}
+#menu .lead{font-size:11.5px;line-height:1.45;margin:8px 0 10px}
+#menu .levels{gap:7px}#menu .lv{padding:10px 10px 9px 13px;border-radius:12px}#menu .lv b{font-size:14.5px}#menu .lv span{font-size:11px}#menu .lv i{font-size:10.5px;margin-top:5px}
+.modes{gap:6px;margin-top:8px}.mode{padding:8px 9px;border-radius:12px}.mode i{font-size:18px;margin-bottom:3px}.mode b{font-size:12px}.mode span{font-size:9.5px}
+.more{margin-top:10px;padding-top:8px}
+#menu .panel{width:min(410px,100%);padding:16px 16px 12px}
+#menu .lead{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;cursor:help}
+#menu .lead:hover{-webkit-line-clamp:unset;display:block}
+#menu .lv span{display:none}
+.mode span{display:none}
+#menu .panel{width:min(380px,100%);max-height:calc(100% - 20px)}
+.mmenu{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+.mi{display:flex;align-items:center;gap:10px;width:100%;padding:11px 14px;border-radius:12px;font-size:15px;font-weight:700;text-align:left;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.1);transition:background .15s,border-color .15s,transform .15s}
+.mi i{font-style:normal;font-size:19px;width:24px;text-align:center}
+.mi u{margin-left:auto;text-decoration:none;color:var(--dim);font-size:18px;transition:transform .2s}
+.mi:hover{background:rgba(255,255,255,.14);border-color:rgba(255,255,255,.25);transform:translateX(3px)}
+.mi.on{background:rgba(255,201,74,.16);border-color:rgba(255,201,74,.5)}
+.mi.on u{transform:rotate(90deg);color:var(--acc)}
+.sub{padding:4px 2px 8px;animation:subIn .2s ease-out}
+@keyframes subIn{from{opacity:0;transform:translateY(-4px)}}
+.sub .levels{grid-template-columns:1fr;gap:6px}
+.sub .lv{display:flex;align-items:baseline;gap:8px;padding:9px 12px 9px 14px!important}
+.sub .lv b{font-size:14px!important}.sub .lv i{margin:0 0 0 auto!important;font-size:10.5px!important}
+.sub .modes{grid-template-columns:1fr 1fr}
+.sub .mode{flex-direction:row;align-items:center;gap:8px}.sub .mode i{margin:0}
+.sub .opts{margin-top:4px;flex-direction:column;gap:8px}
+.sub .pstats{grid-template-columns:repeat(3,1fr);gap:6px;margin:8px 0}.sub .pstats b{font-size:17px}.sub .pstats span{font-size:10.5px}
+.sub .row .btn{padding:7px 10px;font-size:12px}
+.resume{margin-top:10px}
+#lobbyCard{width:230px;padding:7px 9px 9px}
+#lbBrain{width:212px;height:78px}
+#lbSyn{display:none}
+#lobbyCard .hd{font-size:11px}#lbMood{font-size:11.5px;min-height:16px}#lbSyn{font-size:10px}
+#lobbyCard .btn{padding:5px 9px;font-size:11.5px}#lobbyCard .row{margin-top:6px!important;gap:6px}
+#lobbyCard{position:fixed;right:16px;top:16px;width:230px;padding:7px 9px 9px;z-index:5;backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(10,14,20,.7)}
+#lobbyCard .hd{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;color:var(--mute);margin-bottom:4px}
+#lobbyCard .hd b{color:var(--ink)}
+#lbBrain{display:block;width:212px;height:78px}
+.lbRow{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;font-size:11.5px;color:var(--mute);margin-top:6px}
+.lbRow b{color:#ffd36a;font-variant-numeric:tabular-nums;min-width:34px;text-align:right}
+.bar.dop{height:7px}.bar.dop i{background:linear-gradient(90deg,#ff9f43,#ffe27a);box-shadow:0 0 8px rgba(255,200,90,.7)}
+#lbMood{margin-top:5px;font-size:11.5px;font-weight:600;color:var(--acc);min-height:16px}
+#lbSyn{display:none}
+#lobbyCard .btn{padding:5px 9px;font-size:11.5px}
+#lobbyCard .hd{font-size:11px}#lobbyCard .row{margin-top:6px!important;gap:6px}
+@media (max-width:900px){#menu{justify-content:center;background:rgba(8,10,14,.5)}#lobbyCard{display:none}}
 @keyframes pain{0%{box-shadow:0 0 0 2px var(--bad),0 0 34px rgba(255,90,110,.6)}100%{box-shadow:0 0 0 0 transparent}}
 /* замах */
 #wring{--p:0;position:absolute;left:50%;top:50%;width:38px;height:38px;margin:-19px 0 0 -19px;border-radius:50%;opacity:calc(var(--p) * 4);
@@ -218,26 +295,31 @@ h1 em{font-style:normal;color:var(--acc)}
 
 <div id="menu" class="screen">
   <div class="panel glass">
-    <h1>FLYLUTION <em>3D</em></h1>
-    <div class="tabs"><button class="tab on" data-m="normal">🎮 Обычная игра</button><button class="tab" data-m="dev">🧠 Помощь разработчику</button></div>
+    <h1 class="logo">FLYLUTION <em>3D</em></h1>
+    <div class="tagline">настоящий мозг мухи · эволюция · охота</div>
+    <button class="btn pri resume" id="mResume" hidden>Продолжить охоту</button>
+    <nav class="mmenu">
+    <button class="mi" data-s="modeNormal">Обычная игра<u>›</u></button>
+    <div class="sub" id="modeNormal" hidden>
     <div class="locs" id="locs"></div>
-    <div id="modeNormal">
     <p class="lead" id="lead">Одна муха. Настоящий мозг из коннектома FlyWire — 3216 нейронов дрозофилы. Она видит растущую тень, слышит усиками шаги и свист замаха, чует сладкое, чувствует боль и помнит её. Её предки прошли эволюцию в тысячах поколений, а сама она учится на тебе прямо во время охоты: запоминает твой ритм, опасные места и передаёт это потомству.</p>
     <div class="levels" id="levels"></div>
-    <div class="row">
-      <button class="btn" id="mLab">🧬 Лаборатория эволюции</button>
-      <button class="btn" id="mObs">🔍 Наблюдать за мухой</button>
-      <button class="btn" id="mSb">🌍 Песочница</button>
-      <button class="btn" id="mAch">🏆 Достижения</button>
-      <button class="btn" id="mResume" hidden>▶ Продолжить охоту</button>
+    <div class="modes">
+      <button class="mode" id="mObs"><b>Наблюдение</b></button>
+      <button class="mode" id="mSb"><b>Песочница</b></button>
     </div>
     </div>
-    <div id="modeDev" hidden>
+    <button class="mi" data-s="modeDev">Помощь разработчику<u>›</u></button>
+    <div class="sub" id="modeDev" hidden>
       <p class="lead">Ты сам обучаешь ИИ <b style="color:var(--bad)">Преисподней</b>. Каждая пойманная муха получает наказание при смерти: синапсы, которые привели её к гибели, слабеют, и потомство это наследует. Мухи, которые дольше всех уходили от тебя, становятся родителями. Справа внизу видны связи её мозга: что усилилось и что ослабло.</p>
       <div class="pstats"><div><b id="dGen">—</b><span>поколение Преисподней</span></div><div><b id="dFlies">0</b><span>мух поймано тобой</span></div><div><b id="dBest">—</b><span>лучшая муха продержалась</span></div></div>
       <div class="row"><button class="btn pri" id="dStart">Обучать Преисподнюю</button><button class="btn" id="dExport">⬇ Скачать мозг</button><button class="btn" id="dImport">⬆ Загрузить мозг</button><button class="btn" id="dReset">Сбросить</button><input type="file" id="dFile" accept=".json,application/json" hidden></div>
       <p class="help" style="margin-top:10px" id="dNet"></p>
     </div>
+    <button class="mi" id="mLab">Лаборатория эволюции</button>
+    <button class="mi" id="mAch">Достижения</button>
+    <button class="mi" data-s="mSet">Настройки<u>›</u></button>
+    <div class="sub" id="mSet" hidden>
     <div class="opts">
       <label>Чувствительность мыши <input type="range" id="oSens" min="0.3" max="2.5" step="0.05"></label>
       <label>Звук <input type="range" id="oVol" min="0" max="1" step="0.05"></label>
@@ -246,9 +328,19 @@ h1 em{font-style:normal;color:var(--acc)}
       <label><input type="checkbox" id="oFx"> красивая графика</label>
     </div>
     <div class="help"><kbd>WASD</kbd> ходить · <kbd>Shift</kbd> тихий шаг (шагов не слышно, но взмах муха увидит и услышит) · <kbd>ЛКМ</kbd> удар / держать — ракетка и спрей · <kbd>1</kbd>–<kbd>7</kbd> или колесо — оружие (<kbd>6</kbd> миниган и <kbd>7</kbd> тапкомёт — мемное) · <kbd>B</kbd> мозг · <kbd>H</kbd> подсветка · <kbd>Esc</kbd> пауза<br>Слушай жужжание — оно объёмное. Сидящая муха молчит.</div>
+    </div>
+    </nav>
   </div>
 </div>
 
+<div id="lobbyCard" class="glass" hidden>
+  <div class="hd"><b>Муха на камне у моря</b><span id="lbName"></span></div>
+  <canvas id="lbBrain"></canvas>
+  <div class="lbRow"><span>дофамин</span><div class="bar dop"><i id="lbDop"></i></div><b id="lbDopN">0%</b></div>
+  <div id="lbMood">нажми куда-нибудь — включится море и музыка</div>
+  <div id="lbSyn"></div>
+  <div class="row" style="margin-top:8px"><button class="btn" id="lbHoney">Капля мёда</button><button class="btn" id="lbMus">🎵 Музыка</button></div>
+</div>
 <div id="meme" hidden></div>
 <div id="win" class="screen" hidden>
   <div class="panel glass" style="width:min(560px,100%)">
@@ -2618,7 +2710,7 @@ function renderLevels() {
     btn.innerHTML = `<b>${d.name}</b><span>${d.desc}</span><i>${L && L.hit !== undefined ? 'точный удар попадает в ' + L.hit + '% случаев' : 'необученные мухи'}${b ? ' · рекорд ' + fmtT(b) : ''}</i>`;
     btn.onclick = () => startHunt(key); el.appendChild(btn);
   }
-  if (store.custom) { const btn = document.createElement('button'); btn.className = 'lv lv4'; btn.innerHTML = `<b>🧬 Твои мухи</b><span>выведены в лаборатории</span><i>${store.custom.gen} поколений</i>`; btn.onclick = () => startHunt('custom'); el.appendChild(btn); }
+  if (store.custom) { const btn = document.createElement('button'); btn.className = 'lv lv4'; btn.innerHTML = `<b>Твои мухи</b><span>выведены в лаборатории</span><i>${store.custom.gen} поколений</i>`; btn.onclick = () => startHunt('custom'); el.appendChild(btn); }
 }
 function renderWbar() {
   const el = $('#wbar'); el.innerHTML = '';
@@ -2632,7 +2724,7 @@ function setMode(m) {
   const isDev = m === 'play' && G.lv && G.lv.key === 'dev';
   $('#brainBox').hidden = !(store.settings.brain || isDev); $('#brainBox').classList.toggle('dev', !!isDev); BPOS = null;
   if (m !== 'lab') hideLabObjs(); else { labBodies.visible = labWings.visible = true; }
-  OBS.show(m === 'obs'); SB.show(m === 'sb'); $('#achScr').hidden = true; if (m !== 'play') flyBlob.visible = false;
+  OBS.show(m === 'obs'); SB.show(m === 'sb'); if (typeof LOBBY !== 'undefined') LOBBY.show(m === 'menu'); $('#achScr').hidden = true; if (m !== 'play') flyBlob.visible = false;
   if (m !== 'play') { $('#win').hidden = true; $('#meme').hidden = true; }
   flyObj.visible = m !== 'lab' && m !== 'obs' && m !== 'sb'; for (const id of WPN) wModels[id].visible = false; if (m !== 'play') { hideProj(); G.spin = 0; }
   if (m === 'menu') { renderLevels(); renderDev(); initMenuWorld(); }
@@ -2685,7 +2777,12 @@ $('#pResume').onclick = () => { setPause(false); lockPointer(); };
 $('#pMenu').onclick = () => { setMode('menu'); };
 $('#mResume').onclick = () => { setMode('play'); lockPointer(); };
 $('#mLab').onclick = () => openLab();
-document.querySelectorAll('.tab').forEach(t => t.onclick = () => { document.querySelectorAll('.tab').forEach(x => x.classList.toggle('on', x === t)); $('#modeNormal').hidden = t.dataset.m !== 'normal'; $('#modeDev').hidden = t.dataset.m !== 'dev'; renderDev(); });
+/* главное меню: 5 пунктов, подпункты выскакивают по нажатию (открыт только один) */
+document.querySelectorAll('.mi[data-s]').forEach(b => b.onclick = () => {
+  const el = $('#' + b.dataset.s), open = el.hidden;
+  document.querySelectorAll('.mmenu .sub').forEach(s => s.hidden = true); document.querySelectorAll('.mi').forEach(x => x.classList.remove('on'));
+  el.hidden = !open; b.classList.toggle('on', open); if (b.dataset.s === 'modeDev') renderDev();
+});
 $('#dStart').onclick = async () => { if (G.active && G.lv && G.lv.key === 'dev') { setMode('play'); lockPointer(); } else { if (GLOBAL_DB) await netSync(); startHunt('dev'); } };
 if (GLOBAL_DB) netSync();
 $('#dExport').onclick = exportDev;
@@ -2759,11 +2856,9 @@ function frame(now) {
     menuT += dt * 0.05; camera.position.set(0.9 + Math.sin(menuT) * 1.7, 2.5, 0.2 + Math.cos(menuT) * 1.9); camera.lookAt(-0.4, 0.5, -0.6);
     if ((hudT += dt) > 0.25) { hudT = 0; updateLabUI(); }
   } else {
-    if (MW) { MW.full = true; for (let k = 0; k < Math.round(dt / DT); k++) S.step(MW, DT); const f = MW.flies[0]; poseFly(flyObj, f, dt); }
-    menuT += dt * 0.05; camera.position.set(0.3 + Math.sin(menuT) * 2.4, 1.55 + Math.sin(menuT * 1.7) * 0.1, -0.3 + Math.cos(menuT) * 2.0); camera.lookAt(0.3, 0.9, -0.4);
-    ring.visible = false;
+    LOBBY.frame(dt); ring.visible = false;
   }
-  draw();
+  if (G.mode === 'menu') LOBBY.render(); else draw();
 }
 /* ===== ЗРЕНИЕ МУХИ: два глаза по 110°, ч/б, 40×20 «фасеток» на глаз, 20 раз в секунду =====
    Из картинки считаем, сколько её внезапно потемнело (растущая тень — LPLC2/LC4) и сколько движется,
@@ -3390,6 +3485,421 @@ const OBS = (() => {
   $('#oMacro').onclick = () => { if (eyes) setEyes(false); macro = !macro; $('#oMacro').classList.toggle('pri', macro); }; $('#oBack').onclick = () => setMode('menu');
   $('#mObs').onclick = open;
   return {open, frame, show, mouse, wheel, f};
+})();
+
+/* ================= ЛОББИ: настоящая муха сидит на камне у моря и получает дофамин =================
+   Своя сцена: закатное небо с облаками, живое море с бликами и пеной, камни. Муха — та же модель и тот же мозг
+   из коннектома, что и в охоте. Солнце, бриз и мёд дают дофамин; его видно на панели мозга. Звук: море + музыка. */
+const LOBBY = (() => {
+  const LS = new THREE.Scene();
+  const cam = new THREE.PerspectiveCamera(38, 1, 0.003, 700);
+  const SUN = new THREE.Vector3(0.36, 0.15, -0.92).normalize();
+  const U = {uT:{value:0}, uSun:{value:SUN.clone()}, uSplash:{value:0}, uRocks:{value:[new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]}};
+  const NOISE = `
+    float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float nz(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(hh(i), hh(i + vec2(1.0, 0.0)), f.x), mix(hh(i + vec2(0.0, 1.0)), hh(i + vec2(1.0, 1.0)), f.x), f.y); }
+    float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 5; i++) { v += a * nz(p); p *= 2.03; a *= 0.5; } return v; }`;
+  const SKY = `
+    uniform vec3 uSun; uniform float uT;
+    vec3 skyCol(vec3 d){
+      float h = max(d.y, 0.0), s = max(dot(d, uSun), 0.0);
+      vec3 zen = vec3(0.13, 0.27, 0.55), hor = vec3(0.80, 0.78, 0.76), warm = vec3(1.0, 0.62, 0.34);
+      vec3 c = mix(hor, zen, pow(h, 0.42));
+      c = mix(c, warm, pow(s, 5.0) * (1.0 - h) * 0.9);
+      c += vec3(1.0, 0.78, 0.5) * pow(s, 48.0) * 0.7;
+      c += vec3(1.0, 0.95, 0.82) * smoothstep(0.9992, 0.9996, s) * 7.0;
+      return c;
+    }`;
+  const TAIL = '\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n';
+
+  /* небо с облаками */
+  const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 40, 20), new THREE.ShaderMaterial({uniforms:U, side:THREE.BackSide, depthWrite:false,
+    vertexShader:'varying vec3 vD; void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vD = w.xyz - cameraPosition; gl_Position = projectionMatrix * viewMatrix * w; }',
+    fragmentShader:NOISE + SKY + `varying vec3 vD;
+      void main(){
+        vec3 d = normalize(vD), c = skyCol(d);
+        if (d.y > 0.0) {
+          vec2 uv = d.xz / (d.y + 0.1) * 1.2 + vec2(uT * 0.004, uT * 0.0015);
+          float cl = smoothstep(0.52, 0.86, fbm(uv)), s = max(dot(d, uSun), 0.0);
+          vec3 cc = mix(vec3(0.93, 0.88, 0.86), vec3(1.0, 0.74, 0.5), pow(s, 3.0)) * (0.8 + 0.4 * pow(s, 10.0));
+          c = mix(c, cc, cl * 0.8 * smoothstep(0.0, 0.07, d.y));
+        } else c = mix(c, vec3(0.42, 0.5, 0.56), min(1.0, -d.y * 6.0));
+        gl_FragColor = vec4(c, 1.0);` + TAIL + '}'}));
+  sky.renderOrder = -1; LS.add(sky);
+
+  /* море: волны в вершинах, рябь и блики в пикселях, пена у камней */
+  const WAVES = `
+    #define WV(dx, dy, A, L) { vec2 d = normalize(vec2(dx, dy)); float k = 6.2831 / L; float ph = dot(d, p) * k - uT * sqrt(9.8 * k); h += A * sin(ph); g += A * k * cos(ph) * d; }
+    float H(vec2 p, out vec2 g){ float h = 0.0; g = vec2(0.0);
+      WV(0.15, 1.0, 0.05, 7.5) WV(-0.45, 1.0, 0.032, 4.4) WV(0.8, 0.7, 0.018, 2.7) WV(-0.2, 0.8, 0.011, 1.5) WV(0.6, -0.25, 0.006, 0.85) return h; }`;
+  const seaG = new THREE.PlaneGeometry(2, 2, 240, 240); seaG.rotateX(-Math.PI / 2);
+  { const p = seaG.attributes.position; for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getZ(i); p.setXYZ(i, 320 * x * Math.abs(x), 0, 320 * z * Math.abs(z)); } }
+  const sea = new THREE.Mesh(seaG, new THREE.ShaderMaterial({uniforms:U,
+    vertexShader:'uniform float uT; varying vec3 vW;' + WAVES + `void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vec2 g; float h = H(w.xz, g);
+      w.y += h * smoothstep(300.0, 90.0, length(w.xz - cameraPosition.xz)); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
+    fragmentShader:NOISE + SKY + 'uniform float uSplash; uniform vec4 uRocks[4]; varying vec3 vW;' + WAVES + `
+      void main(){
+        vec2 g; float h = H(vW.xz, g);
+        float dist = length(vW - cameraPosition), fd = clamp(dist / 30.0, 0.0, 1.0);
+        vec2 r = 0.06 * vec2(sin(vW.x * 23.0 + uT * 3.1) + sin(vW.z * 31.0 - uT * 2.3 + vW.x * 7.0), cos(vW.z * 27.0 + uT * 2.7) + sin(vW.x * 19.0 + vW.z * 13.0 - uT * 3.7));
+        vec3 N = normalize(vec3(-g.x - r.x * (1.0 - fd), 1.0, -g.y - r.y * (1.0 - fd)));
+        vec3 V = normalize(cameraPosition - vW), R = reflect(-V, N); R.y = abs(R.y);
+        float fr = 0.02 + 0.98 * pow(1.0 - max(dot(N, V), 0.0), 5.0);
+        vec3 water = mix(vec3(0.015, 0.09, 0.13), vec3(0.04, 0.26, 0.3), clamp(h * 10.0 + 0.35, 0.0, 1.0) * 0.6 + 0.1);
+        float foam = 0.0, shal = 0.0;
+        for (int i = 0; i < 4; i++) {
+          vec4 rk = uRocks[i]; float dd = length(vW.xz - rk.xy) - rk.z;
+          shal = max(shal, smoothstep(0.7, 0.0, dd) * step(0.001, rk.z));
+          float n = nz(vW.xz * 9.0 + uT * 0.4) * 0.6 + nz(vW.xz * 23.0 - uT * 0.7) * 0.4;
+          float w = 0.07 + 0.06 * sin(uT * 1.1 + float(i) * 2.1) + uSplash * 0.16;
+          foam = max(foam, smoothstep(w, 0.0, dd + (n - 0.5) * 0.1) * step(0.001, rk.z));
+        }
+        water = mix(water, vec3(0.1, 0.4, 0.38), shal * 0.55);
+        vec3 col = mix(water, skyCol(R), fr);
+        float s = max(dot(R, uSun), 0.0); col += vec3(1.0, 0.84, 0.58) * (pow(s, 900.0) * 18.0 + pow(s, 80.0) * 0.7);
+        col = mix(col, vec3(0.9, 0.93, 0.92), foam * 0.85);
+        vec3 vd = normalize(vW - cameraPosition);
+        col = mix(col, skyCol(normalize(vec3(vd.x, 0.004, vd.z))), smoothstep(25.0, 300.0, dist));
+        gl_FragColor = vec4(col, 1.0);` + TAIL + '}'}));
+  LS.add(sea);
+
+  /* свет */
+  const sunL = new THREE.DirectionalLight(0xffd6a8, 3.2); sunL.castShadow = true; sunL.shadow.mapSize.set(1024, 1024);
+  Object.assign(sunL.shadow.camera, {left:-0.05, right:0.05, top:0.05, bottom:-0.05, near:0.2, far:3}); sunL.shadow.bias = -0.0002; sunL.shadow.normalBias = 0.0004;
+  LS.add(sunL, sunL.target);
+  LS.add(new THREE.HemisphereLight(0xb8d4f4, 0x3a5a62, 1.35));
+  const fillL = new THREE.DirectionalLight(0xfff0e0, 0.9); LS.add(fillL, fillL.target);   /* мягкий свет со стороны камеры, чтобы муха не была силуэтом */
+
+  /* камни: гранит с крапинками, мокрый и с водорослями у воды, лишайник сверху */
+  const rockTex = (() => {
+    const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
+    g.fillStyle = '#8c867d'; g.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 26000; i++) { const v = Math.random(), l = v < 0.5 ? 40 + Math.random() * 50 : 150 + Math.random() * 90; g.fillStyle = `rgba(${l},${l * 0.97},${l * 0.93},${0.25 + Math.random() * 0.5})`; const s = Math.random() < 0.9 ? 1 + Math.random() * 1.5 : 2 + Math.random() * 3; g.fillRect(Math.random() * 512, Math.random() * 512, s, s); }
+    for (let i = 0; i < 60; i++) { const x = Math.random() * 512, y = Math.random() * 512, r = 6 + Math.random() * 26; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(196,190,120,.35)'); gr.addColorStop(1, 'rgba(196,190,120,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
+    g.strokeStyle = 'rgba(30,26,22,.35)'; for (let i = 0; i < 18; i++) { g.lineWidth = 0.6 + Math.random(); g.beginPath(); let x = Math.random() * 512, y = Math.random() * 512; g.moveTo(x, y); for (let k = 0; k < 8; k++) { x += (Math.random() - 0.5) * 40; y += (Math.random() - 0.5) * 40; g.lineTo(x, y); } g.stroke(); }
+    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+  })();
+  const rockM = new THREE.MeshStandardMaterial({map:rockTex, bumpMap:rockTex, bumpScale:1.4, vertexColors:true, roughness:0.88});
+  function rnd3(seed) { const a = []; let s = seed * 9301 + 49297; const r = () => (s = (s * 9301 + 49297) % 233280) / 233280; for (let i = 0; i < 9; i++) { const th = r() * TAU, ph = Math.acos(2 * r() - 1), f = [1.6, 2.7, 4.3, 7, 11, 17, 26, 40, 60][i]; a.push([Math.sin(ph) * Math.cos(th) * f, Math.cos(ph) * f, Math.sin(ph) * Math.sin(th) * f, r() * TAU, 1 / Math.pow(f, 0.95)]); } return (x, y, z) => { let v = 0; for (const q of a) v += Math.sin(q[0] * x + q[1] * y + q[2] * z + q[3]) * q[4]; return v; }; }
+  const rocks = [];
+  function addRock(x, z, r, y0, sy, seed) {
+    const g = new THREE.SphereGeometry(r, 120, 80), p = g.attributes.position, col = [], n = rnd3(seed);
+    for (let i = 0; i < p.count; i++) {
+      let vx = p.getX(i) / r, vy = p.getY(i) / r, vz = p.getZ(i) / r;
+      const d = 1 + 0.32 * n(vx, vy, vz) + 0.05 * Math.abs(n(vx * 3.1, vy * 3.1, vz * 3.1));
+      let yy = vy * sy * d; if (yy > 0.55 * sy) yy = 0.55 * sy + (yy - 0.55 * sy) * 0.35;   /* плоская верхушка, удобная для мухи */
+      p.setXYZ(i, vx * d * r, yy * r, vz * d * r);
+      const wy = y0 + yy * r, k = 0.5 + 0.5 * n(vx * 5, vy * 5, vz * 5);
+      let c = [0.78 + 0.18 * k, 0.75 + 0.16 * k, 0.7 + 0.14 * k];
+      if (wy < 0.07) { const w = clamp((0.07 - wy) / 0.09, 0, 1); c = c.map((v, j) => v * (1 - 0.6 * w) + [0.05, 0.12, 0.06][j] * w * (wy < 0.02 ? 1 : 0.4)); }
+      if (vy > 0.45 && k > 0.7) c = [c[0] * 1.08, c[1] * 1.04, c[2] * 0.8];
+      col.push(...c);
+    }
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
+    /* текстура без растяжек у макушки: сверху — проекция сверху, по бокам — сбоку */
+    const nm = g.attributes.normal, uv = g.attributes.uv;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); if (Math.abs(nm.getY(i)) > 0.6) uv.setXY(i, x * 2.6, z * 2.6); else uv.setXY(i, (Math.abs(nm.getX(i)) > Math.abs(nm.getZ(i)) ? z : x) * 2.6, y * 2.6); }
+    const m = new THREE.Mesh(g, rockM); m.position.set(x, y0, z); m.receiveShadow = true; m.castShadow = true; LS.add(m);
+    rocks.push({m, x, z, r:r * 0.98}); return m;
+  }
+  const main = addRock(0, 0, 0.3, -0.07, 0.85, 7);
+  addRock(-0.62, -0.75, 0.2, -0.09, 0.9, 3); addRock(1.0, -1.7, 0.42, -0.22, 0.8, 11); addRock(-2.4, -4.2, 0.9, -0.5, 0.75, 5);
+  rocks.slice(0, 4).forEach((r, i) => U.uRocks.value[i].set(r.x, r.z, r.r, 1));
+  /* далёкие острова в дымке */
+  for (const [x, z, w, h] of [[-120, -260, 70, 14], [-40, -300, 40, 9], [150, -280, 90, 18], [230, -240, 40, 7]]) {
+    const isl = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12, 0, TAU, 0, Math.PI / 2), new THREE.MeshBasicMaterial({color:0x8d98a6, fog:false})); isl.scale.set(w, h, w * 0.35); isl.position.set(x, -0.5, z); LS.add(isl);
+  }
+
+  /* муха */
+  const fly = makeFly(); fly.traverse(o => { if (o.isMesh) o.castShadow = true; }); LS.add(fly);
+  const pm = new THREE.MeshStandardMaterial({color:0x4a3426, roughness:0.6});
+  const prob = new THREE.Mesh(new THREE.CylinderGeometry(0.00022, 0.00045, 0.0018, 6), pm); prob.position.set(0.0036, 0.0011, 0); prob.rotation.z = 0.7; prob.visible = false; fly.userData.body.add(prob);
+  const ray = new THREE.Raycaster();
+  function onRock(x, z) { ray.set(new THREE.Vector3(x, 2, z), new THREE.Vector3(0, -1, 0)); const h = ray.intersectObject(main, false)[0]; if (!h) return null; const n = h.face.normal.clone().transformDirection(main.matrixWorld); return {p:V(h.point.x, h.point.y, h.point.z), n:V(n.x, n.y, n.z)}; }
+  main.updateMatrixWorld(true);
+  const YAW0 = Math.atan2(SUN.z, SUN.x) - 0.25;   /* смотрит на море, чуть левее солнца */
+  const F = {p:V(), n:V(0, 1, 0), yaw:YAW0, act:'rest', actT:2, ph:0, name:''};
+  { const q = onRock(Math.cos(YAW0) * 0.15, Math.sin(YAW0) * 0.15) || onRock(0, 0) || {p:V(0, 0.2, 0), n:V(0, 1, 0)}; F.p = q.p; F.n = q.n; }   /* на краю камня, обращённом к морю */
+
+  /* мёд */
+  const honeyM = new THREE.MeshPhysicalMaterial({color:0xe39418, roughness:0.08, clearcoat:1, transmission:0.35, thickness:0.002, emissive:0x3a1d00});
+  const drop = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), honeyM); drop.visible = false; drop.castShadow = true; LS.add(drop);
+  let honey = null;
+
+  /* искры дофамина вокруг мухи */
+  const NP = 70, pPos = new Float32Array(NP * 3), pAlpha = [], parts = [];
+  const pGeo = new THREE.BufferGeometry(); pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+  const pts = new THREE.Points(pGeo, new THREE.PointsMaterial({map:softTex, color:0xffd36a, size:0.0016, transparent:true, opacity:0.9, depthWrite:false, blending:THREE.AdditiveBlending}));
+  pts.frustumCulled = false; LS.add(pts);
+  for (let i = 0; i < NP; i++) parts.push({life:0, x:0, y:-9, z:0, vx:0, vy:0, vz:0});
+
+  /* мозг */
+  let brain = null, D = 0.15, tonic = 0.15, phasic = 0, sunK = 1, sunPrev = 1, gust = 0, gustS = 1, splash = 0, mood = '', moodT = 0, lastSyn = 0, synT = 0, reinT = 0, bT = 0, drawT = 0;
+  const REW = () => D_.IN_NODES[8] && D_.IN_NODES[8].length ? D_.IN_NODES[8] : null;
+  let D_ = null;
+  function initBrain() {
+    D_ = S.dims();
+    const g = LEVELS3 && LEVELS3.medium ? Float32Array.from(LEVELS3.medium.genomes[Math.floor(Math.random() * LEVELS3.medium.genomes.length)]) : S.freshPool(1)[0].w;
+    brain = new S.Brain(g); F.name = S.NAMES[Math.floor(Math.random() * S.NAMES.length)];
+    $('#lbName').textContent = F.name;
+  }
+  function setMood(t, k = 2.5) { if (moodT > 0 && k < 3) return; mood = t; moodT = k; $('#lbMood').textContent = t; }
+
+  /* поведение */
+  function choose() {
+    if (honey && honey.left > 0) { F.act = 'sip'; F.actT = rnd(3, 5); return; }
+    const w = {rest:0.22, groomF:0.2 * (1.3 - D), groomH:0.12, groomW:0.1, bask:0.3 * (0.4 + D), turn:0.08};
+    let s = 0; for (const k in w) s += w[k]; let r = Math.random() * s;
+    for (const k in w) { r -= w[k]; if (r <= 0) { F.act = k; break; } }
+    F.actT = F.act === 'turn' ? 0.6 : F.act === 'bask' ? rnd(4, 9) : rnd(1.5, 4);
+    if (F.act === 'turn') { const t = brain.mean(D_.OUTN.turnL) - brain.mean(D_.OUTN.turnR); F.turnTo = F.yaw + (Math.abs(t) > 0.01 ? Math.sign(t) : (Math.random() < 0.5 ? -1 : 1)) * rnd(0.25, 0.7); F.turnTo = YAW0 + clamp(angDiff(YAW0, F.turnTo), -0.6, 0.6); }
+    if (F.act === 'bask') setMood('греется на солнце, раскрыв крылья');
+    if (F.act.startsWith('groom')) setMood(F.act === 'groomF' ? 'потирает лапки' : F.act === 'groomH' ? 'умывает глаза' : 'чистит крылья');
+  }
+  function stepBrain(dt) {
+    const I = brain.inp; I.fill(0);
+    I[8] = D * 1.6;                                                      /* дофамин → нейроны награды */
+    if (honey && honey.left > 0) { const sip = F.act === 'sip' ? 1.6 : 0.4; I[4] = I[5] = sip; I[2] = I[3] = 0.6; }
+    I[6] = gust * (gustS > 0 ? 1 : 0.3) * 0.9; I[7] = gust * (gustS < 0 ? 1 : 0.3) * 0.9;   /* бриз шевелит усики */
+    if (sunPrev - sunK > 0.004) I[0] = I[1] = 0.25;                     /* тень облака */
+    brain.step(true);
+    if (brain.mean(D_.OUTN.fly) > 0.35 && F.act !== 'sip' && F.act !== 'flick') { F.act = 'flick'; F.actT = 0.35; setMood('чуть не взлетела — и передумала'); }
+  }
+  function frame(dt) {
+    if (!brain) initBrain();
+    const t = (U.uT.value += dt);
+    /* облака закрывают солнце */
+    sunPrev = sunK;
+    sunK = clamp(0.72 + 0.28 * Math.sin(t * 0.09) + 0.18 * Math.sin(t * 0.23 + 1.3), 0.35, 1);
+    sunL.intensity = 3.2 * sunK;
+    if (sunK > 0.9 && sunPrev <= 0.9) { phasic += 0.18; setMood('солнце вышло — тёплый всплеск дофамина', 3); burst(10); }
+    /* волна набегает на камень: пена, брызги, ветер для усиков, звук */
+    splash = Math.max(0, splash - dt * 0.5); U.uSplash.value = splash;
+    gust = Math.max(0, gust - dt * 0.6);
+    if (t > nextWave) { nextWave = t + rnd(5, 9); waveHit(); }
+    /* дофамин: тонус от солнца и сытости + всплески */
+    const want = 0.1 + 0.32 * sunK * (F.act === 'bask' ? 1.25 : 1) + (honey ? 0.1 : 0);
+    tonic += (want - tonic) * Math.min(1, dt * 0.4);
+    phasic *= Math.exp(-dt / 3.5);
+    if (honey && F.act === 'sip' && honey.left > 0) { honey.left = Math.max(0, honey.left - dt / 7); phasic += dt * 0.12; if (Math.random() < dt * 6) burst(1); if (honey.left <= 0) { setMood('всё выпила. Сыта и счастлива', 4); honey.t = 2; } }
+    D = clamp(tonic + phasic, 0, 1);
+    /* мозг 40 раз в секунду; дофамин укрепляет то, что только что работало */
+    bT += dt; let n = 0; while (bT >= 0.025 && n < 4) { stepBrain(0.025); bT -= 0.025; n++; } if (n === 4) bT = 0;
+    if ((reinT += dt) > 0.5) { reinT = 0; brain.reinforce(D * 0.08); }
+    /* поведение */
+    F.actT -= dt;
+    if (F.act === 'turn') F.yaw += clamp(angDiff(F.yaw, F.turnTo), -dt * 2.2, dt * 2.2);
+    if (F.act === 'sip' && honey) { const a = Math.atan2(honey.p.z - F.p.z, honey.p.x - F.p.x); F.yaw += clamp(angDiff(F.yaw, a), -dt * 3, dt * 3); }
+    if (F.actT <= 0 || (honey && honey.left > 0 && F.act !== 'sip' && F.act !== 'flick')) choose();
+    if (honey) { const s = 0.0019 * Math.cbrt(Math.max(0.05, honey.left)); drop.scale.setScalar(s); drop.position.set(honey.p.x, honey.p.y + s * 0.6, honey.p.z); if (honey.left <= 0 && (honey.t -= dt) <= 0) { honey = null; drop.visible = false; } }
+    moodT -= dt; if (moodT < -4 && !honey) setMood(D > 0.5 ? 'ей хорошо: дофамин высокий' : sunK < 0.6 ? 'облако — стало прохладнее' : 'слушает море', 1);
+    pose(dt); particles(dt);
+    /* камера: медленно плывёт вокруг мухи, мышь чуть сдвигает */
+    camA += (camGoal - camA) * Math.min(1, dt * 2);
+    /* камера сзади-сбоку: видно муху и море, на которое она смотрит */
+    const a = -Math.PI / 2 - YAW0 + 0.12 + Math.sin(t * 0.05) * 0.2 + mx * 0.25, e = 0.24 + Math.sin(t * 0.07) * 0.04 - my * 0.08, dist = 0.1 + Math.sin(t * 0.04) * 0.01;
+    const tg = _t.set(F.p.x, F.p.y + 0.004, F.p.z);
+    cam.position.set(tg.x + Math.sin(a) * Math.cos(e) * dist, tg.y + Math.sin(e) * dist, tg.z + Math.cos(a) * Math.cos(e) * dist);
+    /* камера не должна уходить в камень и терять муху за бугром: поднимаем, пока луч до мухи свободен */
+    { let lift = 0; for (let k = 0; k < 12; k++) { let blocked = false; for (let s = 0.1; s < 0.8; s += 0.1) { const x = cam.position.x + (tg.x - cam.position.x) * s, z = cam.position.z + (tg.z - cam.position.z) * s, y = cam.position.y + lift + (tg.y - cam.position.y - lift) * s, q = rockH(x, z); if (q !== null && q + 0.0015 > y) { blocked = true; break; } } if (!blocked) break; lift += 0.003; }
+      camLift += (lift - camLift) * Math.min(1, dt * 3); cam.position.y += camLift; }
+    const wide = innerWidth > 900;
+    const up = dist * 0.13;   /* смотрим чуть выше мухи — в кадре горизонт, закат и море */
+    cam.lookAt(tg.x, tg.y + up, tg.z); if (wide) { _r.setFromMatrixColumn(cam.matrixWorld, 0); cam.lookAt(tg.x - _r.x * dist * 0.28, tg.y + up, tg.z - _r.z * dist * 0.28); }
+    sky.position.copy(cam.position);
+    sunL.position.set(F.p.x + SUN.x, F.p.y + SUN.y, F.p.z + SUN.z); sunL.target.position.set(F.p.x, F.p.y, F.p.z);
+    fillL.position.set(cam.position.x * 2 - F.p.x, cam.position.y * 2 - F.p.y + 0.05, cam.position.z * 2 - F.p.z); fillL.target.position.set(F.p.x, F.p.y, F.p.z);
+    /* панель */
+    if ((drawT += dt) > 0.05) { drawT = 0; drawBrainL(); }
+    if ((synT += dt) > 1) { synT = 0; let k = 0; for (let e2 = 0; e2 < brain.w.length; e2++) if (Math.abs(brain.w[e2]) > Math.abs(brain.w0[e2]) * 1.02) k++; lastSyn = k; $('#lbSyn').textContent = `дофамин укрепил ${k} ${plural(k, 'синапс', 'синапса', 'синапсов')} из ${brain.w.length}`; }
+    $('#lbDop').style.width = (D * 100).toFixed(1) + '%'; $('#lbDopN').textContent = Math.round(D * 100) + '%';
+    MUS.frame(dt);
+  }
+  let nextWave = 3, camA = 0, camGoal = 0, mx = 0, my = 0, camLift = 0;
+  /* высота камня в точке — по сетке, заранее (луч по 10 000 треугольникам каждый кадр дорогой) */
+  const HG = 48, HR = 0.4, hgrid = new Float32Array(HG * HG).fill(-9);
+  { const p = main.geometry.attributes.position, o = main.position;
+    for (let k = 0; k < p.count; k++) { const i = Math.round((p.getX(k) + o.x + HR) / (2 * HR) * (HG - 1)), j = Math.round((p.getZ(k) + o.z + HR) / (2 * HR) * (HG - 1)); if (i < 0 || j < 0 || i >= HG || j >= HG) continue; hgrid[i * HG + j] = Math.max(hgrid[i * HG + j], p.getY(k) + o.y); }
+    const h2 = hgrid.slice(); for (let i = 1; i < HG - 1; i++) for (let j = 1; j < HG - 1; j++) { if (h2[i * HG + j] > -1) continue; let m = -9; for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) m = Math.max(m, h2[(i + a) * HG + j + b]); hgrid[i * HG + j] = m; } }
+  function rockH(x, z) { const fi = (x + HR) / (2 * HR) * (HG - 1), fj = (z + HR) / (2 * HR) * (HG - 1); if (fi < 0 || fj < 0 || fi > HG - 1 || fj > HG - 1) return null; const v = hgrid[Math.round(fi) * HG + Math.round(fj)]; return v < -1 ? null : v; }
+  const _t = new THREE.Vector3(), _r = new THREE.Vector3();
+  addEventListener('mousemove', e => { if (G.mode !== 'menu') return; mx = e.clientX / innerWidth - 0.5; my = e.clientY / innerHeight - 0.5; });
+  function waveHit() {
+    splash = 1; gust = 1; gustS = Math.random() < 0.5 ? -1 : 1; phasic += 0.04;
+    if (Math.random() < 0.5) setMood('бриз от волны щекочет усики');
+    MUS.wave();
+  }
+  function burst(k) { let n = 0; for (const p of parts) { if (p.life > 0) continue; p.life = rnd(1.2, 2.4); p.x = F.p.x + rnd(-0.004, 0.004); p.y = F.p.y + rnd(0.002, 0.006); p.z = F.p.z + rnd(-0.004, 0.004); p.vx = rnd(-0.002, 0.002); p.vy = rnd(0.003, 0.008); p.vz = rnd(-0.002, 0.002); if (++n >= k) break; } }
+  function particles(dt) {
+    if (Math.random() < dt * D * D * 6) burst(1);
+    parts.forEach((p, i) => { if (p.life > 0) { p.life -= dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vx += Math.sin(U.uT.value * 3 + i) * dt * 0.002; } pPos[i * 3] = p.x; pPos[i * 3 + 1] = p.life > 0 ? p.y : -9; pPos[i * 3 + 2] = p.z; });
+    pGeo.attributes.position.needsUpdate = true;
+  }
+  const _Xa = new THREE.Vector3(), _Ya = new THREE.Vector3(), _Za = new THREE.Vector3(), _Ma = new THREE.Matrix4();
+  function pose(dt) {
+    fly.position.set(F.p.x, F.p.y, F.p.z);
+    _Ya.set(F.n.x, F.n.y, F.n.z); _Xa.set(Math.cos(F.yaw), 0, Math.sin(F.yaw)); _Xa.addScaledVector(_Ya, -_Xa.dot(_Ya)).normalize(); _Za.crossVectors(_Xa, _Ya); _Ma.makeBasis(_Xa, _Ya, _Za); fly.quaternion.setFromRotationMatrix(_Ma);
+    const now = U.uT.value, Ud = fly.userData, a = F.act;
+    for (const w of Ud.wings) {
+      if (a === 'flick') { const fl = Math.floor(now * 160) % 2 ? 0.9 : -0.3; w.piv.rotation.set(w.s * fl, w.s * 0.3, 0); }
+      else if (a === 'bask') w.piv.rotation.set(w.s * 0.12, w.s * (0.95 + Math.sin(now * 0.7) * 0.05), 0);
+      else if (a === 'groomW') w.piv.rotation.set(w.s * (0.15 + Math.sin(now * 14) * 0.08), w.s * 0.85, 0);
+      else w.piv.rotation.set(w.s * 0.05, w.s * 0.55, 0);
+    }
+    Ud.body.rotation.z = a === 'sip' ? -0.12 + Math.sin(now * 6) * 0.04 : a === 'groomF' ? 0.12 : a === 'groomH' ? 0.2 : a === 'groomW' ? -0.1 : a === 'bask' ? 0.05 : 0;
+    Ud.body.rotation.x = a === 'groomW' ? Math.sin(now * 8) * 0.05 : 0;
+    prob.visible = a === 'sip'; prob.scale.y = a === 'sip' ? 1 + Math.sin(now * 9) * 0.25 : 1;
+    for (const lg of Ud.legs) {
+      let rx = lg.s * 0.9, ry = 0, rz = lg.k * 0.4;
+      if (a === 'groomF' && lg.k === 1) { rx = lg.s * (0.35 + Math.sin(now * 26 + lg.s) * 0.25); ry = lg.s * Math.sin(now * 26) * 0.3; rz = 1.1; }
+      else if (a === 'groomH' && lg.k === 1) { rx = lg.s * (0.1 + Math.sin(now * 18 + lg.s) * 0.2); rz = 1.9 + Math.sin(now * 18) * 0.25; }
+      else if (a === 'groomW' && lg.k === -1) { rx = lg.s * (0.2 + Math.sin(now * 16 + lg.s) * 0.2); rz = -1.7 + Math.sin(now * 16) * 0.3; }
+      else if (a === 'turn') rz += Math.sin(now * 30 + lg.k) * 0.2;
+      lg.l.rotation.set(rx, ry, rz);
+    }
+  }
+  function giveHoney() {
+    if (honey && honey.left > 0) return;
+    const hx = F.p.x + Math.cos(F.yaw) * 0.0085, hz = F.p.z + Math.sin(F.yaw) * 0.0085, q = onRock(hx, hz);
+    if (!q) return;
+    honey = {p:q.p, left:1, t:0}; drop.visible = true; phasic += 0.25;
+    setMood('учуяла мёд — дофамин взлетает!', 4); burst(14); F.actT = 0;
+    ACH.give && ACH.give('feed');
+  }
+
+  /* панель мозга: нейроны, активные связи и золотые «капли» дофамина, бегущие по синапсам */
+  const cv = $('#lbBrain'), gx = cv.getContext('2d'); let LP = null, LW = 0, LH = 0, LSTR = null;
+  const dots = [];
+  function layoutL() {
+    const dpr = Math.min(devicePixelRatio, 2); LW = cv.clientWidth || 300; LH = cv.clientHeight || 140; cv.width = LW * dpr; cv.height = LH * dpr;
+    const BN = D_.BN, depth = new Int16Array(BN).fill(99), q = [];
+    for (let c = 0; c < 9; c++) for (const n of D_.IN_NODES[c]) if (depth[n]) { depth[n] = 0; q.push(n); }
+    const adj = Array.from({length:BN}, () => []); for (let k = 0; k < D_.BE; k++) adj[D_.EA[k]].push(D_.EB[k]);
+    while (q.length) { const n = q.shift(); for (const m of adj[n]) if (depth[m] > depth[n] + 1) { depth[m] = depth[n] + 1; q.push(m); } }
+    const cols = 7, nodes = BRAIN.nodes, colOf = i => nodes[i][2] === 'descending' ? cols - 1 : depth[i] === 0 ? 0 : clamp(depth[i] === 99 ? 3 : depth[i], 1, cols - 2);
+    const groups = Array.from({length:cols}, () => []); for (let i = 0; i < BN; i++) groups[colOf(i)].push(i);
+    LP = new Float32Array(BN * 2);
+    groups.forEach((gg, c) => gg.forEach((n, k) => { LP[2 * n] = 8 + c * (LW - 16) / (cols - 1) + (c > 0 && c < cols - 1 ? Math.sin(k * 2.3) * 7 : 0); LP[2 * n + 1] = 5 + (k + 0.5) * (LH - 12) / gg.length; }));
+    LSTR = Array.from({length:D_.BE}, (_, k) => k).sort((a, b) => Math.abs(D_.EW0[b]) - Math.abs(D_.EW0[a])).slice(0, 500);
+  }
+  function drawBrainL() {
+    if (!LP || cv.clientWidth !== LW) layoutL();
+    const g = gx, dpr = Math.min(devicePixelRatio, 2); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, LW, LH);
+    const r = brain.r, w = brain.w, EA = D_.EA, EB = D_.EB, rew = REW();
+    g.lineWidth = 0.6; g.strokeStyle = 'rgba(160,190,230,.08)'; g.beginPath(); for (const e of LSTR) { g.moveTo(LP[2 * EA[e]], LP[2 * EA[e] + 1]); g.lineTo(LP[2 * EB[e]], LP[2 * EB[e] + 1]); } g.stroke();
+    g.strokeStyle = `rgba(255,${Math.round(220 - 30 * D)},${Math.round(130 - 60 * D)},${0.35 + 0.4 * D})`; g.lineWidth = 1; g.beginPath();
+    for (let e = 0; e < D_.BE; e++) { const a = EA[e]; if (r[a] * Math.abs(w[e]) > 0.07) { g.moveTo(LP[2 * a], LP[2 * a + 1]); g.lineTo(LP[2 * EB[e]], LP[2 * EB[e] + 1]); } } g.stroke();
+    /* капли дофамина бегут от нейронов награды по их связям */
+    if (rew && Math.random() < D * 1.4) for (let k = 0; k < 2; k++) { const n = rew[Math.floor(Math.random() * rew.length)]; const outs = []; for (let e = 0; e < D_.BE && outs.length < 40; e++) if (EA[e] === n) outs.push(e); if (outs.length) dots.push({e:outs[Math.floor(Math.random() * outs.length)], t:0}); }
+    else if (!rew && Math.random() < D) { const e = LSTR[Math.floor(Math.random() * LSTR.length)]; dots.push({e, t:0}); }
+    while (dots.length > 80) dots.shift();
+    g.fillStyle = 'rgba(255,214,110,.95)';
+    for (let i = dots.length - 1; i >= 0; i--) { const d = dots[i]; d.t += 0.05 / 0.7; if (d.t >= 1) { dots.splice(i, 1); continue; } const a = EA[d.e], b = EB[d.e]; const x = LP[2 * a] + (LP[2 * b] - LP[2 * a]) * d.t, y = LP[2 * a + 1] + (LP[2 * b + 1] - LP[2 * a + 1]) * d.t; g.beginPath(); g.arc(x, y, 1.6, 0, TAU); g.fill(); }
+    for (let i = 0; i < D_.BN; i++) {
+      const a = r[i], rad = 1.1 + Math.log2(1 + BRAIN.nodes[i][1]) * 0.33;
+      g.fillStyle = a > 0.05 ? `rgba(${Math.round(124 + 131 * a)},${Math.round(242 - 40 * a)},${Math.round(154 - 90 * a)},${0.55 + a * 0.45})` : 'rgba(150,160,180,.3)';
+      g.beginPath(); g.arc(LP[2 * i], LP[2 * i + 1], rad + a * 1.8, 0, TAU); g.fill();
+    }
+    if (rew) { g.strokeStyle = `rgba(255,200,80,${0.3 + 0.7 * D})`; g.lineWidth = 1.2; for (const n of rew) { g.beginPath(); g.arc(LP[2 * n], LP[2 * n + 1], 3 + D * 4, 0, TAU); g.stroke(); } }
+    g.font = '600 9px system-ui'; g.fillStyle = 'rgba(255,255,255,.6)'; g.textAlign = 'left'; g.fillText('чувства', 2, LH - 1); g.textAlign = 'right'; g.fillText('движения', LW - 2, LH - 1);
+  }
+  const _sz = new THREE.Vector2();
+  function render() {
+    renderer.getSize(_sz); if (Math.abs(cam.aspect - _sz.x / _sz.y) > 1e-3) { cam.aspect = _sz.x / _sz.y; cam.updateProjectionMatrix(); }
+    renderer.shadowMap.needsUpdate = true; renderer.setRenderTarget(null); renderer.render(LS, cam);
+  }
+  function show(on) { $('#lobbyCard').hidden = !on; if (on) MUS.start(); else MUS.stop(); }
+  $('#lbHoney').onclick = giveHoney;
+
+  /* ===== ЗВУК: море (гул, накаты, всплески у камня, чайки) и спокойная музыка, которая сочиняется на ходу ===== */
+  const MUS = (() => {
+    let bus = null, musG = null, seaG = null, rev = null, dly = null, brown = null, timer = null, next = 0, bar = 0, gullT = 20, on = store.settings.music !== false, running = false;
+    const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+    const CH = [[50, 54, 57, 61], [47, 50, 54, 57, 61], [43, 47, 50, 54], [45, 50, 52, 57]];   /* Dmaj7 · Bm9 · Gmaj7 · Asus */
+    function build() {
+      bus = AC.createGain(); bus.gain.value = 0; bus.connect(master);
+      musG = AC.createGain(); musG.gain.value = on ? 0.55 : 0; musG.connect(bus);
+      seaG = AC.createGain(); seaG.gain.value = 0.9; seaG.connect(bus);
+      /* реверберация из затухающего шума */
+      rev = AC.createConvolver(); const L = AC.sampleRate * 3, ir = AC.createBuffer(2, L, AC.sampleRate);
+      for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < L; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / L, 2.6); }
+      rev.buffer = ir; const rg = AC.createGain(); rg.gain.value = 0.55; rev.connect(rg); rg.connect(musG);
+      dly = AC.createDelay(1); dly.delayTime.value = 0.45; const fb = AC.createGain(); fb.gain.value = 0.33; const dl = AC.createBiquadFilter(); dl.type = 'lowpass'; dl.frequency.value = 2200;
+      dly.connect(dl); dl.connect(fb); fb.connect(dly); dl.connect(musG); dl.connect(rev);
+      /* коричневый шум — гул моря */
+      const n = AC.sampleRate * 4; brown = AC.createBuffer(2, n, AC.sampleRate);
+      for (let c = 0; c < 2; c++) { const d = brown.getChannelData(c); let l = 0; for (let i = 0; i < n; i++) { l = (l + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = l * 3.5; } }
+      const s = AC.createBufferSource(); s.buffer = brown; s.loop = true; const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+      const sw = AC.createGain(); sw.gain.value = 0.55; const lfo = AC.createOscillator(), lg = AC.createGain(); lfo.frequency.value = 0.11; lg.gain.value = 0.22; lfo.connect(lg); lg.connect(sw.gain); lfo.start();
+      s.connect(lp); lp.connect(sw); sw.connect(seaG); s.start();
+    }
+    function start() {
+      if (!AC || !master) return; if (!bus) build();
+      running = true; const t = AC.currentTime; bus.gain.cancelScheduledValues(t); bus.gain.setTargetAtTime(1, t, 0.8);
+      if (!timer) { next = Math.max(next, t + 0.1); timer = setInterval(sched, 200); }
+    }
+    function stop() { running = false; if (!bus) return; const t = AC.currentTime; bus.gain.cancelScheduledValues(t); bus.gain.setTargetAtTime(0, t, 0.4); if (timer) { clearInterval(timer); timer = null; } }
+    function pad(f, t0, dur, g0) {
+      for (const dt of [-4, 4]) {
+        const o = AC.createOscillator(); o.type = 'triangle'; o.frequency.value = f; o.detune.value = dt;
+        const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1100; const g = AC.createGain();
+        g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(g0, t0 + 1.6); g.gain.setValueAtTime(g0, t0 + dur - 0.2); g.gain.linearRampToValueAtTime(0.0001, t0 + dur + 2.2);
+        o.connect(lp); lp.connect(g); g.connect(musG); g.connect(rev); o.start(t0); o.stop(t0 + dur + 2.3);
+      }
+    }
+    function bell(f, t0, g0) {
+      for (const [m, a] of [[1, 1], [2.01, 0.25], [3.02, 0.08]]) {
+        const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = f * m; const g = AC.createGain();
+        g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(g0 * a, t0 + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 1.8 / m);
+        o.connect(g); g.connect(musG); g.connect(dly); g.connect(rev); o.start(t0); o.stop(t0 + 1.9);
+      }
+    }
+    function sched() {
+      if (!running || !AC) return;
+      while (next < AC.currentTime + 0.8) {
+        const ch = CH[bar % CH.length], BAR = 4.8, t0 = next;
+        if (on) {
+          ch.forEach(m => pad(mtof(m), t0, BAR, 0.028));
+          { const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = mtof(ch[0] - 12); const g = AC.createGain(); g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.09, t0 + 0.8); g.gain.linearRampToValueAtTime(0.0001, t0 + BAR + 1); o.connect(g); g.connect(musG); o.start(t0); o.stop(t0 + BAR + 1.1); }
+          const scale = ch.map(m => m + 24).concat(ch.map(m => m + 12));
+          for (let k = 0; k < 8; k++) if (Math.random() < (k % 2 ? 0.35 : 0.6)) bell(mtof(scale[Math.floor(Math.random() * scale.length)]), t0 + k * 0.6 + Math.random() * 0.03, 0.05 + Math.random() * 0.03);
+        }
+        next += BAR; bar++;
+      }
+    }
+    /* накат волны: «шшш» нарастает и откатывается, у камня — всплеск */
+    function wave() {
+      if (!AC || !bus || !running) return; const t = AC.currentTime;
+      const s = AC.createBufferSource(); s.buffer = noiseBuf; s.loop = true; const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.5;
+      bp.frequency.setValueAtTime(500, t); bp.frequency.linearRampToValueAtTime(1800, t + 1.3); bp.frequency.linearRampToValueAtTime(700, t + 4.5);
+      const g = AC.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.32, t + 1.2); g.gain.exponentialRampToValueAtTime(0.0001, t + 4.8);
+      const pn = AC.createStereoPanner ? AC.createStereoPanner() : null; if (pn) pn.pan.value = rnd(-0.6, 0.6);
+      s.connect(bp); bp.connect(g); (pn ? (g.connect(pn), pn) : g).connect(seaG); s.start(t); s.stop(t + 5);
+      for (let k = 0; k < 3; k++) {   /* брызги о камень */
+        const t1 = t + 1.0 + k * rnd(0.08, 0.2), b = AC.createBufferSource(); b.buffer = noiseBuf; const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 1800 + Math.random() * 1500;
+        const g2 = AC.createGain(); g2.gain.setValueAtTime(0.0001, t1); g2.gain.linearRampToValueAtTime(0.12, t1 + 0.02); g2.gain.exponentialRampToValueAtTime(0.0001, t1 + 0.35);
+        b.connect(hp); hp.connect(g2); g2.connect(seaG); b.start(t1, Math.random() * 0.5); b.stop(t1 + 0.4);
+      }
+    }
+    function gull() {
+      if (!AC || !bus) return; const t = AC.currentTime, n = 2 + Math.floor(Math.random() * 3), pn = AC.createStereoPanner ? AC.createStereoPanner() : null; if (pn) { pn.pan.value = rnd(-0.9, 0.9); pn.connect(seaG); }
+      for (let k = 0; k < n; k++) {
+        const t0 = t + k * rnd(0.28, 0.4), o = AC.createOscillator(); o.type = 'triangle'; o.frequency.setValueAtTime(1150, t0); o.frequency.exponentialRampToValueAtTime(1650, t0 + 0.06); o.frequency.exponentialRampToValueAtTime(780, t0 + 0.26);
+        const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1400; bp.Q.value = 2; const g = AC.createGain();
+        g.gain.setValueAtTime(0.0001, t0); g.gain.linearRampToValueAtTime(0.035, t0 + 0.04); g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.28);
+        o.connect(bp); bp.connect(g); g.connect(pn || seaG); o.start(t0); o.stop(t0 + 0.3);
+      }
+    }
+    function frame(dt) { if (!running) return; if ((gullT -= dt) <= 0) { gullT = rnd(18, 40); gull(); } }
+    function toggle() { on = !on; store.settings.music = on; saveStore(); if (musG) musG.gain.setTargetAtTime(on ? 0.55 : 0, AC.currentTime, 0.6); renderBtn(); }
+    function renderBtn() { $('#lbMus').textContent = on ? 'Музыка: вкл' : 'Музыка: выкл'; $('#lbMus').classList.toggle('pri', on); }
+    renderBtn(); $('#lbMus').onclick = () => { initAudio(); if (G.mode === 'menu') start(); toggle(); };
+    return {start, stop, wave, frame, isOn:() => running};
+  })();
+  /* браузер разрешает звук только после первого клика или клавиши */
+  const wake = () => { initAudio(); if (G.mode === 'menu' && !MUS.isOn()) MUS.start(); };
+  addEventListener('pointerdown', wake, true); addEventListener('keydown', wake, true);
+  return {frame, render, show, giveHoney, F, get D() { return D; }, scene:LS, cam};
 })();
 
 /* ================= ПЕСОЧНИЦА: колонии мух, ты — бог ================= */
@@ -4364,7 +4874,7 @@ const SB = (() => {
 
 applyLocation(store.settings.loc); tuneEnv(scene); renderLocs();
 renderWbar(); setMode('menu'); requestAnimationFrame(frame);
-window.FLY3D = {S, G, LB, store, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, EYE, tickHunt, drawHunt, composer, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
+window.FLY3D = {S, G, LB, store, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, EYE, LOBBY, tickHunt, drawHunt, composer, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
   snap(w, h) { const ow = innerWidth, oh = innerHeight; renderer.setSize(w, h, false); composer.setSize(w, h); gtao.setSize(w, h); bloom.resolution.set(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); draw(); const url = renderer.domElement.toDataURL('image/jpeg', 0.88); resize(); return url; },
   step(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) tickHunt(); },
   stepV(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) { tickHunt(); drawHunt(DT); } },   /* то же, но с отрисовкой — работает зрение мухи */
