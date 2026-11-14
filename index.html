@@ -4102,13 +4102,14 @@ const SB = (() => {
     let sh = 1; if (t > SHAL && x > 0 && y > 0) sh = 1 + clamp((hgt[i] - hgt[i - MW - 1]) * 5, -0.22, 0.22);
     for (let k = 0; k < 4; k++) {
       subColor(t, jit[i * 4 + k], k, hgt[i], W.snow, _c);
+      if (t === FENCE && wallOwn[i] >= 0 && W.cols[wallOwn[i]] && k === 0) { const cr = W.cols[wallOwn[i]].rgb; _c[0] = cr[0] * 0.8; _c[1] = cr[1] * 0.8; _c[2] = cr[2] * 0.8; }   /* флажок цвета колонии на заборе */
       const p = ((y * SP + (k >> 1)) * MW * SP + x * SP + (k & 1)) * 4;
       MD[p] = _c[0] * sh; MD[p + 1] = _c[1] * sh; MD[p + 2] = _c[2] * sh; MD[p + 3] = 255;
     }
   }
   function paintAll() { for (let i = 0; i < N; i++) paintTile(i); mapDirty = true; snowPainted = W.snow; }
   function setTile(i, t) {
-    tile[i] = t; if (t !== LAVA) { lavaT[i] = 0; lavaF[i] = 0; }
+    tile[i] = t; if (t !== LAVA) { lavaT[i] = 0; lavaF[i] = 0; } if (t !== FENCE) wallOwn[i] = -1; else if (wallOwn[i] < 0) fenceHp[i] = 0;
     hgt[i] = clamp(TT[t].h + (jit[i * 4] - 0.5) * 0.04, 0, 1);
     paintTile(i); const x = i % MW; if (x < MW - 1 && i + MW + 1 < N) paintTile(i + MW + 1); mapDirty = true; terrT = Math.min(terrT, 0.3);
   }
@@ -4261,7 +4262,9 @@ const SB = (() => {
     const b = new S.Brain(gg); if (old) { b.w.set(old.w); b.w0 = old.w0; } return b; }
   let bBudget = 0;
   function brainTick(f, dt) {
-    f.bT += dt; if (f.bT < 0.1 || bBudget <= 0) { if (f.bT > 0.6) f.bT = 0.6; return; }
+    /* сидящая муха без угроз думает реже — это главный расход процессора */
+    const calm = f.landed && !f.foe && !f.scanFoe && f.st !== 'eat' && !(hand.on && hand.harm), iv = calm ? (f.st === 'rest' ? 0.45 : 0.25) : 0.1;
+    f.bT += dt; if (f.bT < iv || bBudget <= 0) { if (f.bT > 0.6) f.bT = 0.6; return; }
     bBudget--; const b = f.br, I = b.inp, bt = f.bT; f.bT = 0; I.fill(0);
     let thr = null, tv = 0; const vis = W.wx.kind === 'fog' ? 0.6 : 1;
     const consider = (x, y, v) => { if (v > tv) { tv = v; thr = {x, y}; } };
@@ -4322,11 +4325,15 @@ const SB = (() => {
     f.br = makeBrain(f.g, t, f.br); return true; }
   const wxMul = () => W.wx.kind === 'storm' ? 0.75 : W.wx.kind === 'snow' ? 0.78 : W.wx.kind === 'rain' ? 0.88 : 1;
   const spd = f => (f.role === 'queen' ? 0.45 : f.role === 'warrior' ? 1.35 : 1.05) * (f.trait === 'chosen' ? 1.3 : f.trait === 'smart' ? 1.12 : f.trait === 'dumb' ? 0.8 : 1) * (f.col && f.col.lv >= 3 && f.role === 'worker' ? 1.2 : 1) * (0.85 + 0.3 * clamp(f.o.fwd, 0, 1)) * wxMul() * (f.mSpd || 1) * (f.zombie ? 0.7 : 1);
-  const dmg = f => (f.role === 'warrior' ? 2.2 : f.role === 'queen' ? 1 : 0.5) * (f.trait === 'chosen' ? 2.5 : 1) * (f.col && f.col.lv >= 4 && f.role === 'warrior' ? 1.3 : 1) * (f.mDmg || 1) * (f.col && !f.zombie ? WPN[f.col.wpn || 0].m : 1);
+  const dmg = f => (f.role === 'warrior' ? 2.2 : f.role === 'queen' ? 1 : 0.5) * (f.trait === 'chosen' ? 2.5 : 1) * (f.col && f.col.lv >= 4 && f.role === 'warrior' ? 1.3 : 1) * (f.mDmg || 1) * WPN[wT(f)].m;
+  /* ступень снаряжения мухи: лучшее из колониального и личного (подарок бога) */
+  const wT = f => f.zombie ? 0 : Math.max(f.col ? f.col.wpn || 0 : 0, f.wpn || 0), aT = f => f.zombie ? 0 : Math.max(f.col ? f.col.arm || 0 : 0, f.arm || 0);
+  function giveGear(f, k) { if (!f || f.role === 'student' || f.zombie) return false; const cur = k === 'wpn' ? wT(f) : aT(f); if (cur >= 4) return false; f[k] = cur + 1; return true; }
   /* ================= ОРУЖИЕ И БРОНЯ: колонии куют их сами за еду ================= */
-  const ORE = ['', 'медь', 'железо', 'золото'];
-  const WPN = [{n:'Голые лапки', m:1}, {n:'Шипы', m:1.3, c:20, lv:2, ore:0, col:'#8a6a3a'}, {n:'Медные мечи', m:1.65, c:40, lv:3, ore:1, col:'#d8874a'}, {n:'Железные мечи', m:2.1, c:70, lv:4, ore:2, col:'#d6dde6'}, {n:'Золотые мечи', m:2.7, c:110, lv:5, ore:3, col:'#ffd23f'}];
-  const ARM = [{n:'Без брони', r:0}, {n:'Листовая броня', r:0.2, c:20, lv:2, ore:0, col:'#58a83e'}, {n:'Медные панцири', r:0.35, c:40, lv:3, ore:1, col:'#c8743a'}, {n:'Железные латы', r:0.5, c:70, lv:4, ore:2, col:'#9aa6b4'}, {n:'Золотые латы', r:0.62, c:110, lv:5, ore:3, col:'#f0c020'}];
+  const ORE = ['', 'железо (холмы)', 'железо и золото (горы)'];
+  /* медь есть везде; железо — холмы, горы или кузница; золото — горы или кузница */
+  const WPN = [{n:'Голые лапки', m:1}, {n:'Шипы', m:1.3, c:20, lv:2, ore:0, col:'#8a6a3a'}, {n:'Медные мечи', m:1.65, c:35, lv:3, ore:0, col:'#e07a30'}, {n:'Железные мечи', m:2.1, c:60, lv:4, ore:1, col:'#e8f0f8'}, {n:'Золотые мечи', m:2.7, c:100, lv:5, ore:2, col:'#ffd23f'}];
+  const ARM = [{n:'Без брони', r:0}, {n:'Листовая броня', r:0.2, c:20, lv:2, ore:0, col:'#58a83e'}, {n:'Медные панцири', r:0.35, c:35, lv:3, ore:0, col:'#d0682a'}, {n:'Железные латы', r:0.5, c:60, lv:4, ore:1, col:'#a8b4c4'}, {n:'Золотые латы', r:0.62, c:100, lv:5, ore:2, col:'#f0c020'}];
   /* какая руда есть на земле колонии: холмы — медь, горы и скалы — железо; золото — только в кузнице */
   function oreOf(c) {
     const r = terrR(c); let o = 0;
@@ -4338,17 +4345,19 @@ const SB = (() => {
   function gearNext(c) {
     const out = [];
     for (const L of [WPN, ARM]) { const T = L[((L === WPN ? c.wpn : c.arm) || 0) + 1]; if (!T) continue;
-      const need = c.lv < T.lv ? `нужен ур. ${T.lv}` : T.ore === 3 && !c.forge ? 'нужна кузница' : T.ore && T.ore <= 2 && (c.ore || 0) < T.ore && !c.forge ? `нужна ${ORE[T.ore]} (${T.ore === 1 ? 'холмы' : 'горы'}) или кузница` : `${Math.round(T.c * (c.forge ? 0.7 : 1))} еды`;
+      const need = c.lv < T.lv ? `нужен ур. ${T.lv}` : T.ore && (c.ore || 0) < T.ore && !c.forge ? `нужны ${T.ore === 1 ? 'холмы или горы' : 'горы'} на земле колонии или кузница` : `${Math.round(T.c * (c.forge ? 0.7 : 1))} еды`;
       out.push(`${T.n.toLowerCase()} — ${need}`); }
     return out.join('; ') || 'всё выковано';
   }
-  const forgeOf = c =>W.items.find(it => it.kind === 'forge' && owner[idx(it.x, it.y)] === c.id);
+  /* неприкосновенный запас: на кузницу и забор тратятся только излишки */
+  const foodReserve = c => 30 + c.n * 0.6;
+  const forgeOf = c => W.items.find(it => it.kind === 'forge' && owner[idx(it.x, it.y)] === c.id);
   function smithy(c) {
     const forge = forgeOf(c), ore = oreOf(c); c.ore = ore; c.forge = !!forge;
-    const can = T => T && c.lv >= T.lv && (T.ore === 0 || (T.ore <= 2 && (ore >= T.ore || forge)) || (T.ore === 3 && forge));
+    const can = T => T && c.lv >= T.lv && (T.ore === 0 || ore >= T.ore || forge);
     const price = T => Math.round(T.c * (forge ? 0.7 : 1) * (c.trait === 'smart' ? 0.85 : c.trait === 'dumb' ? 1.3 : 1));
     const opts = [['wpn', WPN], ['arm', ARM]]; if ((c.arm || 0) < (c.wpn || 0) || (c.wpn === c.arm && !c.raid && Math.random() < 0.5)) opts.reverse();
-    for (const [k, L] of opts) { const T = L[(c[k] || 0) + 1]; if (!can(T)) continue; const p = price(T); if (c.food < p + 12) continue;
+    for (const [k, L] of opts) { const T = L[(c[k] || 0) + 1]; if (!can(T)) continue; const p = price(T); if (c.food < p + foodReserve(c)) continue;
       c.food -= p; c[k] = (c[k] || 0) + 1;
       log(`${dot(c)} <b>${c.name}</b> выковали: ${T.n.toLowerCase()}${forge ? ' в кузнице' : ''}`); sndAt('ding', c.nx, c.ny, 0.25);
       if (forge) { forge.hot = 3; fxRing(forge.x, forge.y, 3, '#ffb040'); }
@@ -4388,8 +4397,13 @@ const SB = (() => {
     const s = spd(f) * U * (d < 2 ? Math.max(0.3, d / 2) : 1), k = Math.min(1, dt * 7);
     f.vx += (ux * s - f.vx) * k + W.wind.x * dt * 1.6; f.vy += (uy * s - f.vy) * k + W.wind.y * dt * 1.6;
     let nx = clamp(f.x + f.vx * dt, 1, MW - 2), ny = clamp(f.y + f.vy * dt, 1, MH - 2);
+    const bi = idx(nx, ny);
+    if (!passable(f, nx, ny) && tile[bi] === FENCE && wallOwn[bi] >= 0 && (f.role === 'warrior' || f.zombie || f.foe || (f.col && f.col.raid))) {
+      /* чужой забор: воины, зомби и рейдеры его ломают */
+      chewFence(f, bi, dt); f.vx *= 0.3; f.vy *= 0.3; f.blockT = 0; f.alt = 0.4; return;
+    }
     if (!passable(f, nx, ny)) {
-      /* стена: ищем обход, свои пролетают через ворота своей территории */
+      /* стена: ищем обход */
       const sp = Math.hypot(f.vx, f.vy) || 1, a0 = Math.atan2(f.vy, f.vx); let ok = false;
       for (const da of [0.7, -0.7, 1.4, -1.4, 2.1, -2.1]) { const a = a0 + da * (f.wallSide || 1), tx = f.x + Math.cos(a) * sp * dt, ty = f.y + Math.sin(a) * sp * dt; if (passable(f, tx, ty)) { nx = tx; ny = ty; f.vx = Math.cos(a) * sp; f.vy = Math.sin(a) * sp; ok = true; break; } }
       if (!ok) { nx = f.x; ny = f.y; f.vx = -f.vx * 0.5; f.vy = -f.vy * 0.5; f.wallSide = -(f.wallSide || 1); }
@@ -4401,9 +4415,44 @@ const SB = (() => {
     if (Math.hypot(f.vx, f.vy) > 0.1) f.h = Math.atan2(f.vy, f.vx);
   }
   /* стена не пропускает никого */
-  function passable(f, x, y) { return !isWall(tile[idx(x, y)]); }
+  function passable(f, x, y) { const i = idx(x, y), t = tile[i]; if (!isWall(t)) return true;
+    if (t === FENCE && wallOwn[i] >= 0 && f && f.col && !f.zombie) { const o = W.cols[wallOwn[i]]; if (o && (o === f.col || o.team === f.col.team)) return true; }
+    return false; }
   /* можно ли долететь по прямой, не упираясь в стену */
-  function clearPath(x0, y0, x1, y1) { const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 0.5); for (let s = 1; s < n; s++) if (isWall(tile[idx(lerp(x0, x1, s / n), lerp(y0, y1, s / n))])) return false; return true; }
+  function clearPath(x0, y0, x1, y1, f) { const d = Math.hypot(x1 - x0, y1 - y0), n = Math.ceil(d / 0.5); for (let s = 1; s < n; s++) if (!passable(f, lerp(x0, x1, s / n), lerp(y0, y1, s / n))) return false; return true; }
+  /* ================= ЗАБОР КОЛОНИИ: свои и союзники проходят, враг должен сломать ================= */
+  const fenceHp = new Float32Array(N), FENCE_HP = 6;
+  const fenceCol = i => { const o = wallOwn[i]; return o >= 0 ? W.cols[o] : null; };
+  function buildFence(c, dt) {
+    if (c.lv < 3 || c.n < 8 || c.food < foodReserve(c) * 0.7) return;
+    if ((c.fenceT = (c.fenceT || 0) - dt) > 0) return; c.fenceT = 0.6;
+    const Rr = HOUSE_R[5] + 6.6, step = 0.6 / Rr;   /* одно кольцо на всю жизнь колонии — снаружи всех домов */
+    for (let tries = 0; tries < 4; tries++) {
+      c.fenceA = ((c.fenceA || 0) + step) % TAU;
+      const x = c.nx + Math.cos(c.fenceA) * Rr, y = c.ny + Math.sin(c.fenceA) * Rr; if (!inMap(x, y)) { c.fenceL = null; continue; }
+      const cells = [idx(x, y)], L = c.fenceL, cx = x | 0, cy = y | 0;
+      if (L && L.x !== cx && L.y !== cy && Math.abs(L.x - cx) <= 1 && Math.abs(L.y - cy) <= 1) cells.push(L.y * MW + cx);   /* без диагональных щелей */
+      c.fenceL = {x:cx, y:cy}; let did = false;
+      for (const i of cells) {
+        const t = tile[i];
+        if (t === FENCE && wallOwn[i] === c.id) { if (fenceHp[i] < FENCE_HP) { fenceHp[i] = FENCE_HP; c.food -= 0.2; did = true; } continue; }   /* чинят */
+        if (!landable(t) || isWater(t) || fireT[i] > 0 || (owner[i] >= 0 && owner[i] !== c.id)) continue;
+        const px = i % MW + 0.5, py = (i / MW | 0) + 0.5;
+        if (c.huts.some(h => Math.hypot(h.x - px, h.y - py) < 1.6) || W.cols.some(o => !o.dead && Math.hypot(o.nx - px, o.ny - py) < HOUSE_R[o.lv] + 2) || W.items.some(it => Math.hypot(it.x - px, it.y - py) < 1.2)) continue;
+        setTile(i, FENCE); wallOwn[i] = c.id; fenceHp[i] = FENCE_HP; paintTile(i); c.food -= 0.4; c.fenceN = (c.fenceN || 0) + 1; did = true;
+        if (!c.fenceLog) { c.fenceLog = true; log(`${dot(c)} <b>${c.name}</b> начали строить забор вокруг поселения`); }
+      }
+      if (did) return;
+    }
+  }
+  /* враг грызёт забор */
+  function chewFence(f, i, dt) {
+    const o = fenceCol(i); fenceHp[i] -= dmg(f) * dt * (f.zombie ? 0.8 : 1);
+    if (Math.random() < dt * 2) W.fx.push({k:'debris', x:i % MW + 0.5, y:(i / MW | 0) + 0.5, vx:R(-2, 2), vy:R(-2, 2), t:0, life:0.5});
+    if (fenceHp[i] > 0) return;
+    setTile(i, GRASS); sndAt('thud', i % MW, i / MW | 0, 0.25);
+    if (o && f.col && (!o.breachT || W.t - o.breachT > 20)) { o.breachT = W.t; log(`${dot(f.col)} ${f.col.name} проломили забор ${o.name}!`); }
+  }
   function nearestEnemy(f, r) {
     let best = null, bd = r;
     for (const p of W.preds) { if (f.role === 'worker') break; const d = Math.hypot(p.x - f.x, p.y - f.y); if (d < bd) { bd = d; best = p; } }
@@ -4423,7 +4472,7 @@ const SB = (() => {
     else if (f.trait === 'chosen') log(`Пала избранная ${who(f)}`);
     W.corpses.push({x:f.x, y:f.y, t:W.t}); if (W.corpses.length > 250) W.corpses.shift();
   }
-  function hurt(f, a, by) { if (f.role === 'student') return; if (by && f.col && f.col.arm && !f.zombie) a *= 1 - ARM[f.col.arm].r; f.hp -= a; if ((f.painCD || 0) < W.t) { f.painCD = W.t + 1; reward(f, -0.6); } if (f.hp <= 0) kill(f, by); }
+  function hurt(f, a, by) { if (f.role === 'student') return; if (by) { const at = aT(f); if (at) a *= 1 - ARM[at].r; } f.hp -= a; if ((f.painCD || 0) < W.t) { f.painCD = W.t + 1; reward(f, -0.6); } if (f.hp <= 0) kill(f, by); }
   function worker(f, dt) {
     const c = f.col, night = isNight();
     if (f.foe) return fight(f, dt);
@@ -4436,7 +4485,7 @@ const SB = (() => {
         if (night) { f.st = 'rest'; f.smellT = null; if (Math.hypot(f.x - c.nx, f.y - c.ny) > HOUSE_R[c.lv] + 3) flyTo(f, nestSpot(c)); return; }
         if (f.stT > 0) return;
         const r = (1.6 + 1.6 * f.br.kSmell) * U * (W.wx.kind === 'fog' ? 0.6 : 1); let best = null, bd = 1e9;
-        for (const fd of W.foods) { if (fd.amt < 0.5) continue; const d = Math.hypot(fd.x - f.x, fd.y - f.y); if (d > (fd.kind === 'dung' ? r * 2.2 : r)) continue; const own = owner[idx(fd.x, fd.y)], sc = d - (f.trait === 'smart' ? fd.amt * 0.2 : 0) + (own >= 0 && own !== c.id ? 12 : 0); if (sc < bd && clearPath(f.x, f.y, fd.x, fd.y)) { bd = sc; best = fd; } }
+        for (const fd of W.foods) { if (fd.amt < 0.5) continue; const d = Math.hypot(fd.x - f.x, fd.y - f.y); if (d > (fd.kind === 'dung' ? r * 2.2 : r)) continue; const own = owner[idx(fd.x, fd.y)], sc = d - (f.trait === 'smart' ? fd.amt * 0.2 : 0) + (own >= 0 && own !== c.id ? 12 : 0); if (sc < bd && clearPath(f.x, f.y, fd.x, fd.y, f)) { bd = sc; best = fd; } }
         f.smellT = best;
         const wk = W.wx.kind === 'storm' ? 0.3 : W.wx.kind === 'acid' || W.wx.kind === 'hail' ? 0.35 : W.wx.kind === 'rain' ? 0.7 : W.wx.kind === 'snow' ? 0.6 : 1;
         f.urge += dt * (0.25 + 3 * f.o.fly + 0.8 * (f.br.inp[2] + f.br.inp[3])) * (f.trait === 'dumb' ? 0.6 : 1) * wk;
@@ -4837,14 +4886,17 @@ const SB = (() => {
     for (const m of W.mets) { m.t -= dt; if (m.t <= 0) meteorHit(m); } W.mets = W.mets.filter(m => m.t > 0);
     for (const v of W.volcs) { v.t -= dt; v.acc += dt; if (v.acc > 0.5) { v.acc = 0; setLava(idx(v.x, v.y), 14); if (Math.random() < 0.4) W.fx.push({k:'smoke', x:v.x, y:v.y, t:0, life:3}); } } W.volcs = W.volcs.filter(v => v.t > 0);
     W.corpses = W.corpses.filter(c => W.t - c.t < 90);
+    /* численность колоний — один проход по всем мухам, а не по разу на каждую колонию */
+    for (const c of W.cols) { c.n = c.q = c.wk = c.wr = c.eg = 0; }
+    for (const o of W.flies) { const c = o.col; if (!c || o.zombie) continue; c.n++; if (o.role === 'queen') c.q++; else if (o.role === 'worker') c.wk++; else c.wr++; }
+    for (const e of W.eggs) if (e.col) e.col.eg++;
     for (const c of W.cols) {
       if (c.dead) continue;
-      let n = 0, q = 0, wk = 0, wr = 0; for (const o of W.flies) if (o.col === c && !o.zombie) { n++; if (o.role === 'queen') q++; else if (o.role === 'worker') wk++; else wr++; }
-      c.n = n; c.q = q; c.wk = wk; c.wr = wr; c.eg = 0; for (const e of W.eggs) if (e.col === c) c.eg++;
       if (c.n >= 30) ACH.give('sb_colony');
       /* гнездо понемногу кормит себя само (запасы, роса, тля) — колония не вымирает от голода даже в пустыне или за стеной */
       if (c.n) c.food += dt * 0.05 * (1 + c.lv * 0.25);
       if ((c.smithT = (c.smithT === undefined ? R(4, 10) : c.smithT) - dt) <= 0) { c.smithT = R(8, 14); if (c.n >= 4) smithy(c); }
+      buildFence(c, dt);
       if (!c.q && c.food < 25 && c.n && !c.warnQ) { c.warnQ = true; log(`${dot(c)} ${c.name} остались без королевы — копят еду на новую`); }
       if (c.q) c.warnQ = false;
       if (!c.q && c.n && c.food >= 25 && !W.eggs.some(e => e.col === c && e.role === 'queen')) { const mom = W.flies.find(o => o.col === c); c.food -= 20; W.eggs.push({col:c, ...nestSpot(c), t:W.t + 12, role:'queen', g:childGenome(mom.g, mom.g), gen:mom.gen + 1, trait:kidTrait(c, mom, null)}); log(`${dot(c)} ${c.name} выкармливают королевское яйцо`); }
@@ -4912,8 +4964,10 @@ const SB = (() => {
     crown:{n:'Корона', tab:'power', d:'Клик по мухе: она становится королевой новой колонии, а 3 соседки уходят с ней'},
     feeder:{n:'Кормушка', tab:'items', d:'Сама насыпает сахар вокруг себя'}, scarecrow:{n:'Пугало', tab:'items', d:'Отпугивает стрижей и лягушек'},
     bonfire:{n:'Костёр', tab:'items', d:'Тёплый свет: мухи рядом лечатся и не мёрзнут'},
-    forge:{n:'Кузница', tab:'items', d:'Ставь на землю колонии: куёт железо без гор, золотые мечи и латы, всё дешевле на 30%'},
+    forge:{n:'Кузница', tab:'items', d:'Ставь на землю колонии: железо и золото без гор, всё дешевле на 30%'},
     smith:{n:'Дар кузнеца', tab:'power', d:'Клик по гнезду: колония сразу получает оружие и броню на ступень лучше'},
+    armB:{n:'Броня мухе', tab:'power', d:'Кисть или клик по мухе: личная броня на ступень лучше', brush:1, hold:0.3},
+    swordB:{n:'Меч мухе', tab:'power', d:'Кисть или клик по мухе: личный меч на ступень лучше', brush:1, hold:0.3},
     raise:{n:'Поднять', tab:'land', d:'Поднимает землю: море → берег → луг → холмы → горы', brush:1, hold:0.12},
     lower:{n:'Опустить', tab:'land', d:'Опускает землю: горы → холмы → луг → берег → море', brush:1, hold:0.12},
     portal:{n:'Портал', tab:'items', d:'Ставь парами: мухи, влетевшие в один, вылетают из другого'},
@@ -4961,6 +5015,10 @@ const SB = (() => {
     if (t === 'hole') { if (!first) return; W.holes.push({x:w.x, y:w.y, t:12, r:0.5, a:0, eat:0}); log('Разверзлась <b>чёрная дыра</b>!'); sfx('whoosh', null, 1); godAct(); ACH.give('sb_hole'); return; }
     if (t === 'zombie') { let n = 0; for (const f of W.flies) if (inB(f.x, f.y, r + 0.4) && !f.zombie) { infect(f, true); n++; } if (n && first) { log(`Бог превратил в зомби мух: ${n}`); godAct(); } fxRing(w.x, w.y, r, '#8fe060'); return; }
     if (t === 'raise' || t === 'lower') { shapeLand(w.x, w.y, Math.max(1, r), t === 'raise' ? 1 : -1); return; }
+    if (t === 'armB' || t === 'swordB') { const k = t === 'armB' ? 'arm' : 'wpn'; let n = 0, last = null;
+      for (const f of W.flies) { if (stroke.has(f) || !(f === fly || inB(f.x, f.y, r + 0.4))) continue; stroke.add(f); if (giveGear(f, k)) { n++; last = f; } }
+      if (n) { log(n === 1 ? `${who(last)} получила: ${(k === 'arm' ? ARM[aT(last)] : WPN[wT(last)]).n.toLowerCase()}` : `Бог раздал ${k === 'arm' ? 'броню' : 'мечи'}: ${n} мух`); sfx('ding', null, 0.3); fxRing(w.x, w.y, Math.max(1, r), '#ffb040'); }
+      else if (first) toast2(fly || W.flies.some(f => inB(f.x, f.y, r + 0.4)) ? 'У них уже всё золотое' : 'Наведи на мух'); return; }
     if (t === 'smith') { if (!first) return; let bc = null, bd = 8; for (const c of W.cols) { if (c.dead) continue; const d = Math.hypot(c.nx - w.x, c.ny - w.y); if (d < bd) { bd = d; bc = c; } } if (!bc) return toast2('Кликни по гнезду колонии');
       if ((bc.wpn || 0) >= 4 && (bc.arm || 0) >= 4) return toast2('У них уже всё золотое'); bc.wpn = Math.min(4, (bc.wpn || 0) + 1); bc.arm = Math.min(4, (bc.arm || 0) + 1);
       log(`${dot(bc)} Бог-кузнец одарил <b>${bc.name}</b>: ${WPN[bc.wpn].n.toLowerCase()} и ${ARM[bc.arm].n.toLowerCase()}`); fxRing(bc.nx, bc.ny, 6, '#ffb040'); sfx('ding', null, 0.4); if (bc.wpn === 4 && bc.arm === 4) ACH.give('sb_gold'); godAct(); renderSide(true); return; }
@@ -5083,6 +5141,11 @@ const SB = (() => {
   const CLOUDS = (() => { const out = []; for (let v = 0; v < 6; v++) { const w = 40, h = 24, nz = makeNoise(), c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'), im = g.createImageData(w, h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const dx = (x - w / 2) / (w / 2), dy = (y - h / 2) / (h / 2), f = fbm(nz, x / 7 + v * 3, y / 7, 3) - (dx * dx + dy * dy) * 0.55; if (f < 0.3) continue; const p = (y * w + x) * 4, l = f > 0.42 ? 255 : 228; im.data[p] = l; im.data[p + 1] = l; im.data[p + 2] = l + (l < 255 ? 8 : 0); im.data[p + 3] = 255; }
     g.putImageData(im, 0, 0); out.push(c); } return out; })();
+  /* тени и тёмные тучи готовим один раз — ctx.filter каждый кадр очень дорогой */
+  const tintCv = (src, mul) => { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; const g = c.getContext('2d'); g.drawImage(src, 0, 0); g.globalCompositeOperation = 'source-atop'; g.fillStyle = mul === 0 ? '#000' : `rgba(0,0,0,${1 - mul})`; g.fillRect(0, 0, c.width, c.height); return c; };
+  const CLOUD_SH = CLOUDS.map(c => tintCv(c, 0)), CLOUD_DK = {0.55:CLOUDS.map(c => tintCv(c, 0.55)), 0.78:CLOUDS.map(c => tintCv(c, 0.78))};
+  /* свечение ночью: одна заготовка-градиент на цвет, рисуется drawImage с прозрачностью */
+  const GLOW = {}; function glowSpr(rgb) { let c = GLOW[rgb]; if (c) return c; c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, `rgba(${rgb},1)`); gr.addColorStop(1, `rgba(${rgb},0)`); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return GLOW[rgb] = c; }
   const clouds = []; for (let k = 0; k < 8; k++) clouds.push({x:R(0, MW), y:R(0, MH), v:k % 6, s:R(0.8, 1.6)});
   W.cloudN = 5;
   const drops = []; for (let k = 0; k < 700; k++) drops.push({x:Math.random(), y:Math.random(), s:R(0.6, 1.2)});
@@ -5094,14 +5157,17 @@ const SB = (() => {
     if (f.alt > 0.05) { ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.fillRect(Math.round(x - 3 * k), Math.round(y - k), 6 * k, 2 * k); }
     const fl = !f.landed || f.st === 'fight', fr = fl ? 1 + ((now * 28 + f.id) & 1) : 0, dir = ((Math.round(f.h / TAU * DIRS) % DIRS) + DIRS) % DIRS;
     spr(FLYSPR[f.zombie ? 2 : f.trait === 'chosen' ? 1 : 0][fr][dir], x, sy, k);
-    if (f.col && !f.zombie) {
-      const A = ARM[f.col.arm || 0], Wp = WPN[f.col.wpn || 0];
-      if (A.col) { ctx.globalAlpha = 0.7; ctx.fillStyle = A.col; ctx.fillRect(Math.round(x - 1.5 * k), Math.round(sy - 1.5 * k), 3 * k, 3 * k); ctx.globalAlpha = 1; ctx.fillStyle = 'rgba(255,255,255,.55)'; ctx.fillRect(Math.round(x - 1.5 * k), Math.round(sy - 1.5 * k), k, k); }
-      if (Wp.col && f.role !== 'worker') {   /* меч в лапке: вперёд и чуть вбок */
-        const c = Math.cos(f.h), s = Math.sin(f.h), bx = x - s * 2.2 * k + c * 0.5 * k, by = sy + c * 2.2 * k + s * 0.5 * k, L = f.role === 'queen' ? 3 : 4;
+    if (!f.zombie && (f.col || f.wpn || f.arm)) {
+      const wt = wT(f), A = ARM[aT(f)], Wp = WPN[wt];
+      const at = aT(f), hc = Math.cos(f.h), hs = Math.sin(f.h);
+      if (A.col) { const ps = at >= 2 ? 3 : 2, ax0 = Math.round(x - ps / 2 * k), ay0 = Math.round(sy - ps / 2 * k); ctx.fillStyle = A.col; ctx.fillRect(ax0, ay0, ps * k, ps * k);
+        if (at >= 3) { const hx = Math.round(x + hc * 2.2 * k - k), hy = Math.round(sy + hs * 2.2 * k - k); ctx.fillRect(hx, hy, 2 * k, 2 * k); if (at === 4) { ctx.fillStyle = '#e63946'; ctx.fillRect(hx + (k >> 1), hy - k, k, k); } }   /* шлем, у золотого — алый гребень */
+        if (at === 4 && ((performance.now() / 300 + f.id) % 3) < 1) { ctx.fillStyle = '#fff'; ctx.fillRect(ax0, ay0, k, k); } }
+      if (Wp.col && (f.role !== 'worker' || f.wpn || wt >= 2) && z >= 4) {   /* меч в лапке: длиннее с каждой ступенью */
+        const c = hc, s = hs, bx = x - s * 2.2 * k + c * 0.5 * k, by = sy + c * 2.2 * k + s * 0.5 * k, L = (f.role === 'worker' ? 1 : 2) + wt;
         ctx.fillStyle = '#5a3a20'; ctx.fillRect(Math.round(bx - k / 2), Math.round(by - k / 2), k, k);
         ctx.fillStyle = Wp.col; for (let q = 1; q <= L; q++) ctx.fillRect(Math.round(bx + c * q * k - k / 2), Math.round(by + s * q * k - k / 2), k, k);
-        if ((f.col.wpn || 0) >= 2) { ctx.fillStyle = '#5a3a20'; ctx.fillRect(Math.round(bx + c * k - s * k - k / 2), Math.round(by + s * k + c * k - k / 2), k, k); ctx.fillRect(Math.round(bx + c * k + s * k - k / 2), Math.round(by + s * k - c * k - k / 2), k, k); }
+        if (wt >= 2) { ctx.fillStyle = '#5a3a20'; ctx.fillRect(Math.round(bx + c * k - s * k - k / 2), Math.round(by + s * k + c * k - k / 2), k, k); ctx.fillRect(Math.round(bx + c * k + s * k - k / 2), Math.round(by + s * k - c * k - k / 2), k, k); }
       }
     }
     if (f.mut) { ctx.fillStyle = '#9dff5a'; ctx.fillRect(Math.round(x + 2 * k), Math.round(sy - 3 * k), k + 1, k + 1); }
@@ -5202,8 +5268,8 @@ const SB = (() => {
     for (let j = clouds.length - 1; j >= 0; j--) { const c = clouds[j]; c.x += (W.wind.x * 0.6 + 0.6) * dt; c.y += W.wind.y * 0.6 * dt; if (c.x > MW + 40) c.x = -40; if (c.x < -40) c.x = MW + 40; if (c.y > MH + 30) c.y = -30; if (c.y < -30) c.y = MH + 30;
       if (j >= W.cloudN) { c.a = (c.a || 0) - dt * 0.5; if (c.a <= 0) { clouds.splice(j, 1); continue; } } else c.a = Math.min(1, (c.a || 0) + dt * 0.3);
       const im = CLOUDS[c.v], w = im.width * c.s * z, h = im.height * c.s * z, x = wx2s(c.x), y = wy2s(c.y); if (!onScr(x, y, w)) continue;
-      ctx.globalAlpha = 0.16 * c.a; ctx.filter = 'brightness(0)'; ctx.drawImage(im, Math.round(x + 6 * z), Math.round(y + 10 * z), Math.round(w), Math.round(h)); ctx.filter = dark < 1 ? `brightness(${dark})` : 'none';
-      ctx.globalAlpha = ca * c.a; ctx.drawImage(im, Math.round(x), Math.round(y), Math.round(w), Math.round(h)); ctx.filter = 'none'; ctx.globalAlpha = 1; }
+      ctx.globalAlpha = 0.16 * c.a; ctx.drawImage(CLOUD_SH[c.v], Math.round(x + 6 * z), Math.round(y + 10 * z), Math.round(w), Math.round(h));
+      ctx.globalAlpha = ca * c.a; ctx.drawImage(dark < 1 ? CLOUD_DK[dark][c.v] : im, Math.round(x), Math.round(y), Math.round(w), Math.round(h)); ctx.globalAlpha = 1; }
     /* осадки и туман — поверх экрана */
     const wk = W.wx.kind, sp = W.speed ? 1 : 0;
     if (W.sugarT > 0) { const a = Math.min(1, W.sugarT / 3); for (let k = 0; k < 160; k++) { const d = drops[699 - k]; d.y += dt * 0.35 * d.s * sp; d.x += Math.sin(now + k) * dt * 0.01 * sp; if (d.y > 1) { d.y -= 1; d.x = Math.random(); } const s = d.s > 1 ? 5 : 4;
@@ -5220,14 +5286,15 @@ const SB = (() => {
     /* ночь, закат и огни */
     const L = W.light; if (L < 0.98) { const a = 1 - L, dusk = L > 0.05 && L < 0.55 ? (0.5 - Math.abs(L - 0.3) * 2) : 0;
       ctx.globalCompositeOperation = 'multiply'; ctx.fillStyle = `rgb(${Math.round(255 - a * 170 + dusk * 30)},${Math.round(255 - a * 160 - dusk * 30)},${Math.round(255 - a * 110 - dusk * 70)})`; ctx.fillRect(0, 0, VW, VH);
-      ctx.globalCompositeOperation = 'lighter'; const glow = (x, y, r, c) => { if (!onScr(x, y, r)) return; const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, c); g.addColorStop(1, 'rgba(0,0,0,0)'); ctx.fillStyle = g; ctx.fillRect(x - r, y - r, r * 2, r * 2); };
-      for (const it of W.items) if (it.kind === 'forge') glow(wx2s(it.x), wy2s(it.y), 5 * z, `rgba(255,140,50,${0.5 * a})`);
-      for (const it of W.items) if (it.kind === 'bonfire') glow(wx2s(it.x), wy2s(it.y) - 3 * ik, 9 * z, `rgba(255,150,60,${0.6 * a})`);
-      for (const it of W.items) if (it.kind === 'lamp' || it.kind === 'zapper') glow(wx2s(it.x), wy2s(it.y) - 3 * ik, 7 * z, it.kind === 'lamp' ? `rgba(255,220,130,${0.6 * a})` : `rgba(150,130,255,${0.6 * a})`);
-      for (const c of W.cols) if (!c.dead) { glow(wx2s(c.nx), wy2s(c.ny), (3 + c.lv * 1.5) * z, `rgba(255,190,90,${0.5 * a})`); for (const h of c.huts) glow(wx2s(h.x), wy2s(h.y), 2.5 * z, `rgba(255,190,90,${0.35 * a})`); }
-      let gl = 0; for (const i of burning) { if (gl++ > 220) break; const x = i % MW, y = i / MW | 0; if (x < X0 || x > X1 || y < Y0 || y > Y1) continue; glow(wx2s(x + 0.5), wy2s(y + 0.5), 3 * z, `rgba(255,120,40,${0.35 * a})`); }
-      gl = 0; for (const i of lavas) { if (gl++ > 220) break; const x = i % MW, y = i / MW | 0; if (x < X0 || x > X1 || y < Y0 || y > Y1) continue; glow(wx2s(x + 0.5), wy2s(y + 0.5), 2.5 * z, `rgba(255,90,30,${0.3 * a})`); }
-      ctx.globalCompositeOperation = 'source-over'; }
+      ctx.globalCompositeOperation = 'lighter'; const glow = (x, y, r, rgb, al) => { if (r < 1 || !onScr(x, y, r)) return; ctx.globalAlpha = al; ctx.drawImage(glowSpr(rgb), x - r, y - r, r * 2, r * 2); };
+      for (const it of W.items) { const k = it.kind;
+        if (k === 'forge') glow(wx2s(it.x), wy2s(it.y), 5 * z, '255,140,50', 0.5 * a);
+        else if (k === 'bonfire') glow(wx2s(it.x), wy2s(it.y) - 3 * ik, 9 * z, '255,150,60', 0.6 * a);
+        else if (k === 'lamp' || k === 'zapper') glow(wx2s(it.x), wy2s(it.y) - 3 * ik, 7 * z, k === 'lamp' ? '255,220,130' : '150,130,255', 0.6 * a); }
+      for (const c of W.cols) if (!c.dead) { glow(wx2s(c.nx), wy2s(c.ny), (3 + c.lv * 1.5) * z, '255,190,90', 0.5 * a); for (const h of c.huts) glow(wx2s(h.x), wy2s(h.y), 2.5 * z, '255,190,90', 0.35 * a); }
+      let gl = 0; for (const i of burning) { if (gl++ > 220) break; const x = i % MW, y = i / MW | 0; if (x < X0 || x > X1 || y < Y0 || y > Y1) continue; glow(wx2s(x + 0.5), wy2s(y + 0.5), 3 * z, '255,120,40', 0.35 * a); }
+      gl = 0; for (const i of lavas) { if (gl++ > 220) break; const x = i % MW, y = i / MW | 0; if (x < X0 || x > X1 || y < Y0 || y > Y1) continue; glow(wx2s(x + 0.5), wy2s(y + 0.5), 2.5 * z, '255,90,30', 0.3 * a); }
+      ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
     if (flash > 0) { ctx.fillStyle = `rgba(235,242,255,${flash * 0.6})`; ctx.fillRect(0, 0, VW, VH); flash = Math.max(0, flash - dt * 3); }
     /* подписи колоний */
     if (z < 16) { ctx.font = '700 11px system-ui'; ctx.textAlign = 'center';
@@ -5262,7 +5329,8 @@ const SB = (() => {
       if (e.target !== cv) return;
       cam.mx = cam.sx = cam.lx = e.clientX; cam.my = cam.sy = cam.ly = e.clientY; cam.moved = false;
       cam.drag = e.button === 2 || e.button === 1 ? 3 : 1;
-      cam.paint = cam.drag === 1 && W.tool !== 'inspect' && !(W.exp && W.exp.placing);
+      /* рисуют только кисти; инструменты-клики срабатывают по отпусканию без сдвига, а протаскивание двигает карту */
+      cam.paint = cam.drag === 1 && W.tool !== 'inspect' && !(W.exp && W.exp.placing) && !!(P[W.tool] && P[W.tool].brush);
       if (cam.paint) { stroke = new Set(); cam.holdT = (P[W.tool] && P[W.tool].hold) || 0; updateHand(e.clientX, e.clientY); apply(e.clientX, e.clientY, true); }
     } else if (e.type === 'mousemove') {
       cam.mx = e.clientX; cam.my = e.clientY; if (e.target === cv || cam.drag) updateHand(e.clientX, e.clientY); else hand.on = false;
@@ -5288,7 +5356,7 @@ const SB = (() => {
   cv.addEventListener('mouseleave', () => { hand.on = false; });
   const tps = new Map(); let pinch = null;
   cv.addEventListener('pointerdown', e => { if (e.pointerType === 'mouse') return; tps.set(e.pointerId, {x:e.clientX, y:e.clientY});
-    if (tps.size === 1) { cam.sx = cam.lx = cam.mx = e.clientX; cam.sy = cam.ly = cam.my = e.clientY; cam.moved = false; cam.drag = 1; cam.paint = W.tool !== 'inspect' && !(W.exp && W.exp.placing); if (cam.paint) { stroke = new Set(); cam.holdT = (P[W.tool] && P[W.tool].hold) || 0; updateHand(e.clientX, e.clientY); apply(e.clientX, e.clientY, true); } }
+    if (tps.size === 1) { cam.sx = cam.lx = cam.mx = e.clientX; cam.sy = cam.ly = cam.my = e.clientY; cam.moved = false; cam.drag = 1; cam.paint = W.tool !== 'inspect' && !(W.exp && W.exp.placing) && !!(P[W.tool] && P[W.tool].brush); if (cam.paint) { stroke = new Set(); cam.holdT = (P[W.tool] && P[W.tool].hold) || 0; updateHand(e.clientX, e.clientY); apply(e.clientX, e.clientY, true); } }
     else if (tps.size === 2) { const [a, b] = [...tps.values()]; pinch = {d:Math.hypot(a.x - b.x, a.y - b.y), z:cam.z}; cam.drag = 0; cam.paint = false; } });
   addEventListener('pointermove', e => { if (G.mode !== 'sb' || e.pointerType === 'mouse' || !tps.has(e.pointerId)) return; tps.set(e.pointerId, {x:e.clientX, y:e.clientY});
     if (pinch && tps.size >= 2) { const [a, b] = [...tps.values()]; cam.z = clamp(pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / Math.max(20, pinch.d), zMin(), Z_MAX); return; }
@@ -5362,6 +5430,8 @@ const SB = (() => {
       if (id === 'meteorRain') { for (const [x, y] of [[2, 2], [7, 1], [5, 6]]) { line(x - 2, y - 2, x, y, O); rect(x, y, 2, 2, '#7a5236'); } rect(0, 10, 12, 2, '#5c9a3a'); return; }
       if (id === 'rainbow') { ['#ff4d4d', '#ffb03c', '#ffe14d', '#5ad15a', '#4da6ff', '#9a5aff'].forEach((c, i) => { for (let k = 0; k <= 12; k++) { const a = Math.PI + k / 12 * Math.PI, r = 5.6 - i * 0.8; px(6 + Math.cos(a) * r, 11 + Math.sin(a) * r, c); } }); return; }
       if (id === 'birds') { for (const [x, y] of [[2, 3], [7, 2], [4, 7], [9, 7]]) { px(x, y, Dk); px(x - 1, y - 1, Dk); px(x + 1, y - 1, Dk); px(x - 2, y, Dk); px(x + 2, y, Dk); } return; }
+      if (id === 'armB') { rect(2, 2, 8, 2, '#9aa6b4'); rect(1, 3, 10, 5, '#9aa6b4'); rect(3, 8, 6, 2, '#9aa6b4'); rect(5, 10, 2, 1, '#9aa6b4'); rect(5, 3, 2, 7, '#ffd23f'); rect(2, 3, 2, 1, Wt); return; }
+      if (id === 'swordB') { line(2, 9, 9, 2, '#d6dde6'); px(10, 1, Wt); line(1, 7, 4, 10, '#8a5a30'); px(1, 10, '#5a3a20'); return; }
       if (id === 'smith') { line(2, 10, 9, 3, '#d6dde6'); line(3, 10, 10, 3, '#9aa6b4'); px(10, 2, Wt); line(1, 8, 4, 11, '#ffd23f'); px(1, 11, '#8a5a30'); px(0, 11, '#8a5a30'); return; }
       if (id === 'giant') { g.drawImage(FLYBASE, 0, 0, 11, 9, -2, -1, 16, 13); line(9, 0, 11, 2, Wt); px(10, 0, Wt); return; }
       if (id === 'clone') { g.drawImage(FLYBASE, 0, 0, 11, 9, -1, -1, 9, 8); g.drawImage(FLYBASE, 0, 0, 11, 9, 4, 5, 9, 8); rect(9, 0, 3, 1, Cy); rect(10, -1, 1, 3, Cy); return; }
@@ -5486,6 +5556,8 @@ const SB = (() => {
   $('#sbHelpQuick').onclick = () => { $('#sbHelp').hidden = true; try { localStorage.setItem('sbHelpSeen2', '1'); } catch (e) {} quick(4); };
   $('#sbCols').addEventListener('click', e => { const el = e.target.closest('[data-col]'); if (!el) return; const c = W.cols[+el.dataset.col]; if (!c) return; W.selCol = c; W.sel = null; W.follow = null; cam.x = c.nx; cam.y = c.ny; cam.z = Math.max(cam.z, 10); renderSide(true); });
   $('#sbCard').addEventListener('click', e => { const a = e.target.closest('[data-c]'); if (!a) return; const k = a.dataset.c;
+    if (k === 'giveArm' || k === 'giveWpn') { const f = following() ? W.follow : W.sel, g = k === 'giveArm' ? 'arm' : 'wpn';
+      if (!f || f.hp <= 0) return; if (!giveGear(f, g)) return toast2(f.zombie ? 'Зомби снаряжение не нужно' : 'Уже золотое'); log(`Бог дал ${who(f)}: ${(g === 'arm' ? ARM[aT(f)] : WPN[wT(f)]).n.toLowerCase()}`); sfx('ding', null, 0.35); renderSide(); return; }
     if (k === 'next') nextFly(1); else if (k === 'prev') nextFly(-1); else if (k === 'watch') followFly(W.sel); else if (k === 'stop') { W.follow = null; renderSide(true); } else if (k === 'close') { W.sel = W.follow = W.selCol = null; renderSide(true); }
     else if (k === 'queen') { const q = W.flies.find(f => f.col === W.selCol && f.role === 'queen'); if (q) followFly(q); else toast2('Королевы нет'); } else if (k === 'goto' && W.selCol) { cam.x = W.selCol.nx; cam.y = W.selCol.ny; cam.z = Math.max(cam.z, 12); } });
   const mini = $('#sbMini'), mg = mini.getContext('2d');
@@ -5519,8 +5591,9 @@ const SB = (() => {
     const d = Math.floor(W.t / DAY) + 1, hr = ((W.t / DAY) % 1) * 24 + 6, hh = Math.floor(hr % 24), mm = Math.floor((hr % 1) * 60);
     $('#sbClock').textContent = `День ${d} · ${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')} · ${WX[W.wx.kind]}`;
     $('#sbPop').textContent = `Мух ${W.flies.length}`; $('#sbColN').textContent = `Колоний ${W.cols.filter(c => !c.dead).length}`;
-    $('#sbCols').innerHTML = W.cols.length ? '<div style="font-weight:700;margin-bottom:4px">Колонии</div>' + W.cols.map((c, i) => `<div class="sbcol ${c.dead ? 'dead' : ''}" data-col="${i}"><div class="h"><span><i class="dt" style="background:${c.css}"></i>${c.name}</span><span>${c.dead ? 'погибла' : (c.trait ? TRAIT[c.trait].n + ' · ' : '') + LV[c.lv] + ' · ' + c.lv}</span></div>${c.dead ? '' : `<div class="s">королев ${c.q} · рабочих ${c.wk} · воинов ${c.wr} · яиц ${c.eg} · еды ${Math.floor(c.food)} · земли ${c.area}${c.wpn || c.arm ? ` · ${WPN[c.wpn || 0].n.toLowerCase()}, ${ARM[c.arm || 0].n.toLowerCase()}` : ''}${c.raid ? ' · война с ' + c.raid.name : ''}</div>`}</div>`).join('')
-      : '<div class="help" style="margin:0">Мир пуст. Вкладка <b>Жизнь</b> → Королева → клик по суше. Или вкладка <b>Мир</b> → Четыре колонии.</div>';
+    const HC = renderSide.hc || (renderSide.hc = {}), setH = (id, h) => { if (HC[id] !== h) { HC[id] = h; $(id).innerHTML = h; } };
+    setH('#sbCols', W.cols.length ? '<div style="font-weight:700;margin-bottom:4px">Колонии</div>' + W.cols.map((c, i) => `<div class="sbcol ${c.dead ? 'dead' : ''}" data-col="${i}"><div class="h"><span><i class="dt" style="background:${c.css}"></i>${c.name}</span><span>${c.dead ? 'погибла' : (c.trait ? TRAIT[c.trait].n + ' · ' : '') + LV[c.lv] + ' · ' + c.lv}</span></div>${c.dead ? '' : `<div class="s">королев ${c.q} · рабочих ${c.wk} · воинов ${c.wr} · яиц ${c.eg} · еды ${Math.floor(c.food)} · земли ${c.area}${c.wpn || c.arm ? ` · ${WPN[c.wpn || 0].n.toLowerCase()}, ${ARM[c.arm || 0].n.toLowerCase()}` : ''}${c.raid ? ' · война с ' + c.raid.name : ''}</div>`}</div>`).join('')
+      : '<div class="help" style="margin:0">Мир пуст. Вкладка <b>Жизнь</b> → Королева → клик по суше. Или вкладка <b>Мир</b> → Четыре колонии.</div>');
     const g = $('#sbGraph').getContext('2d'), w = 250, h = 56; g.clearRect(0, 0, w, h); let mx = 5; for (const c of W.cols) for (const v of c.hist) mx = Math.max(mx, v);
     for (const c of W.cols) { if (c.hist.length < 2) continue; g.strokeStyle = c.css; g.lineWidth = 2; g.beginPath(); c.hist.forEach((v, i) => { const px = i / 89 * w, py = h - 3 - v / mx * (h - 8); i ? g.lineTo(px, py) : g.moveTo(px, py); }); g.stroke(); }
     const now = performance.now(), feed = logs.filter(l => now - l.at < 9000).slice(0, 5);
@@ -5531,18 +5604,19 @@ const SB = (() => {
       if (key !== cardKey || force) { cardKey = key;
         card.innerHTML = `<div style="display:flex;justify-content:space-between"><b id="sbFn"></b><button class="btn" data-c="close" style="padding:0 8px">×</button></div><div id="sbFsub" style="color:var(--dim);font-size:12px"></div><div id="sbFst" style="color:var(--acc);font-weight:700;margin:4px 0"></div><div class="kv" id="sbFkv"></div>
           <canvas id="sbBrainCv" width="280" height="54"></canvas><div class="bars" id="sbBars"></div>
-          <div class="row" style="margin:8px 0 0;gap:4px"><button class="btn" data-c="prev">‹</button>${W.follow === f ? '<button class="btn" data-c="stop">Не следить</button>' : '<button class="btn pri" data-c="watch">Следить</button>'}<button class="btn" data-c="next">›</button></div>`; }
+          <div class="row" style="margin:8px 0 0;gap:4px"><button class="btn" data-c="prev">‹</button>${W.follow === f ? '<button class="btn" data-c="stop">Не следить</button>' : '<button class="btn pri" data-c="watch">Следить</button>'}<button class="btn" data-c="next">›</button></div>${f.role === 'student' ? '' : '<div class="row" style="margin:6px 0 0;gap:4px"><button class="btn" data-c="giveArm">Дать броню</button><button class="btn" data-c="giveWpn">Дать меч</button></div>'}`; }
       card.hidden = false;
       $('#sbFn').innerHTML = f.name;
       $('#sbFsub').textContent = `${ROLE[f.role]}${f.col ? ' · ' + f.col.name : ''}${f.trait ? ' · ' + TRAIT[f.trait].n : ''}${f.gen ? ' · поколение ' + f.gen : ''}`;
       $('#sbFst').textContent = f.stuck ? 'прилипла к липучке!' : f.stun > 0 ? 'кувыркается в воздухе!' : STN[f.st] || (f.role === 'student' ? (f.carry ? 'несёт мячик к тебе' : 'ищет мячик') : '');
-      $('#sbFkv').innerHTML = f.role === 'student' ? `<span>Принесла</span><b>${f.del}</b><span>Очки</span><b>${f.fit.toFixed(1)}</b>` : `<span>Здоровье</span><b>${Math.max(0, f.hp).toFixed(1)} / ${f.maxHp}</b><span>Возраст</span><b>${Math.floor(f.age)} с</b><span>Принесла еды</span><b>${f.deliv}</b><span>Побед</span><b>${f.kills}</b><span>Научилась</span><b>${(learned(f.br) * 100).toFixed(1)}%</b><span>Нюх / пугливость</span><b>${f.br.kSmell.toFixed(1)} / ${(0.5 / f.br.thJump).toFixed(1)}</b>`;
+      $('#sbFkv').innerHTML = f.role === 'student' ? `<span>Принесла</span><b>${f.del}</b><span>Очки</span><b>${f.fit.toFixed(1)}</b>` : `<span>Здоровье</span><b>${Math.max(0, f.hp).toFixed(1)} / ${f.maxHp}</b><span>Оружие</span><b>${WPN[wT(f)].n}${f.wpn && f.wpn >= (f.col ? f.col.wpn || 0 : 0) ? ' (личное)' : ''}</b><span>Броня</span><b>${ARM[aT(f)].n}${f.arm && f.arm >= (f.col ? f.col.arm || 0 : 0) ? ' (личная)' : ''}</b><span>Возраст</span><b>${Math.floor(f.age)} с</b><span>Принесла еды</span><b>${f.deliv}</b><span>Побед</span><b>${f.kills}</b><span>Научилась</span><b>${(learned(f.br) * 100).toFixed(1)}%</b><span>Нюх / пугливость</span><b>${f.br.kSmell.toFixed(1)} / ${(0.5 / f.br.thJump).toFixed(1)}</b>`;
       brainView(f);
     } else if (W.selCol && !W.selCol.dead) {
       const c = W.selCol, key = 'c' + c.name + c.lv;
       if (key !== cardKey || force) { cardKey = key; card.innerHTML = `<div style="display:flex;justify-content:space-between"><b><i class="dt" style="background:${c.css}"></i>${c.name}</b><button class="btn" data-c="close" style="padding:0 8px">×</button></div><div class="kv" id="sbCkv"></div><div class="row" style="margin:8px 0 0;gap:4px"><button class="btn pri" data-c="queen">Королева</button><button class="btn" data-c="goto">К гнезду</button></div>`; }
       card.hidden = false;
-      $('#sbCkv').innerHTML = `<span>Поселение</span><b>${LV[c.lv]} (ур. ${c.lv})</b>${c.trait ? `<span>Черта</span><b>${TRAIT[c.trait].n}</b>` : ''}<span>Оружие</span><b>${WPN[c.wpn || 0].n} (×${WPN[c.wpn || 0].m} урона)</b><span>Броня</span><b>${ARM[c.arm || 0].n}${c.arm ? ` (−${Math.round(ARM[c.arm].r * 100)}% урона)` : ''}</b><span>Руда</span><b>${c.ore ? ORE[c.ore] : 'нет'}${c.forge ? ' · есть кузница' : ''}</b><span>Дальше</span><b>${gearNext(c)}</b><span>Мух</span><b>${c.n} · яиц ${c.eg}</b><span>Рабочих / воинов</span><b>${c.wk} / ${c.wr}</b><span>Еды</span><b>${Math.floor(c.food)}</b><span>Территория</span><b>${c.area} клеток</b><span>Стройка</span><b>${c.lv < 5 ? Math.floor(c.build) + ' / ' + LV_BUILD[c.lv + 1] : 'готово'}</b><span>Родилось / погибло</span><b>${c.births} / ${c.deaths}</b><span>Побед</span><b>${c.kills}</b>${c.raid ? `<span>Война</span><b>с ${c.raid.name}</b>` : ''}`;
+      if (force || !$('#sbCkv').firstChild) HC['#sbCkv'] = null;
+      setH('#sbCkv', `<span>Поселение</span><b>${LV[c.lv]} (ур. ${c.lv})</b>${c.trait ? `<span>Черта</span><b>${TRAIT[c.trait].n}</b>` : ''}<span>Оружие</span><b>${WPN[c.wpn || 0].n} (×${WPN[c.wpn || 0].m} урона)</b><span>Броня</span><b>${ARM[c.arm || 0].n}${c.arm ? ` (−${Math.round(ARM[c.arm].r * 100)}% урона)` : ''}</b><span>Руда</span><b>${c.ore ? ORE[c.ore] : 'нет'}${c.forge ? ' · есть кузница' : ''}</b><span>Дальше</span><b>${gearNext(c)}</b><span>Забор</span><b>${c.lv < 3 ? 'строят с 3-го уровня' : c.fenceN ? 'строят и чинят' : 'копят еду'}</b><span>Мух</span><b>${c.n} · яиц ${c.eg}</b><span>Рабочих / воинов</span><b>${c.wk} / ${c.wr}</b><span>Еды</span><b>${Math.floor(c.food)}</b><span>Территория</span><b>${c.area} клеток</b><span>Стройка</span><b>${c.lv < 5 ? Math.floor(c.build) + ' / ' + LV_BUILD[c.lv + 1] : 'готово'}</b><span>Родилось / погибло</span><b>${c.births} / ${c.deaths}</b><span>Побед</span><b>${c.kills}</b>${c.raid ? `<span>Война</span><b>с ${c.raid.name}</b>` : ''}`);
     } else { card.hidden = true; cardKey = ''; }
   }
   function renderAll() { renderBar(); renderSpeed(); renderSide(true); renderExp(); }
@@ -5575,7 +5649,7 @@ const SB = (() => {
     open = on;
   }
   function frame(dt) {
-    bBudget = 300;
+    bBudget = 220;
     const n = Math.round(dt * W.speed / DT_S); for (let i = 0; i < Math.min(n, 30); i++) step(DT_S);
     if (W.speed && n === 0) step(dt * W.speed);
     camFrame(dt); render(dt);
