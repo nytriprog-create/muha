@@ -3703,9 +3703,8 @@ const LOBBY = (() => {
     /* камера не должна уходить в камень и терять муху за бугром: поднимаем, пока луч до мухи свободен */
     { let lift = 0; for (let k = 0; k < 12; k++) { let blocked = false; for (let s = 0.1; s < 0.8; s += 0.1) { const x = cam.position.x + (tg.x - cam.position.x) * s, z = cam.position.z + (tg.z - cam.position.z) * s, y = cam.position.y + lift + (tg.y - cam.position.y - lift) * s, q = rockH(x, z); if (q !== null && q + 0.0015 > y) { blocked = true; break; } } if (!blocked) break; lift += 0.003; }
       camLift += (lift - camLift) * Math.min(1, dt * 3); cam.position.y += camLift; }
-    const wide = innerWidth > 900;
-    const up = dist * 0.13;   /* смотрим чуть выше мухи — в кадре горизонт, закат и море */
-    cam.lookAt(tg.x, tg.y + up, tg.z); if (wide) { _r.setFromMatrixColumn(cam.matrixWorld, 0); cam.lookAt(tg.x - _r.x * dist * 0.28, tg.y + up, tg.z - _r.z * dist * 0.28); }
+    /* муха — в центре кадра; совсем чуть выше, чтобы горизонт и море были видны */
+    cam.lookAt(tg.x, tg.y + dist * 0.03, tg.z);
     sky.position.copy(cam.position);
     sunL.position.set(F.p.x + SUN.x, F.p.y + SUN.y, F.p.z + SUN.z); sunL.target.position.set(F.p.x, F.p.y, F.p.z);
     fillL.position.set(cam.position.x * 2 - F.p.x, cam.position.y * 2 - F.p.y + 0.05, cam.position.z * 2 - F.p.z); fillL.target.position.set(F.p.x, F.p.y, F.p.z);
