@@ -3493,7 +3493,7 @@ const OBS = (() => {
 const LOBBY = (() => {
   const LS = new THREE.Scene();
   const cam = new THREE.PerspectiveCamera(38, 1, 0.003, 700);
-  const SUN = new THREE.Vector3(0.36, 0.15, -0.92).normalize();
+  const SUN = new THREE.Vector3(0.36, 0.075, -0.93).normalize();   /* низкое закатное солнце — в кадре над морем */
   const U = {uT:{value:0}, uSun:{value:SUN.clone()}, uSplash:{value:0}, uRocks:{value:[new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()]}};
   const NOISE = `
     float hh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -3503,11 +3503,13 @@ const LOBBY = (() => {
     uniform vec3 uSun; uniform float uT;
     vec3 skyCol(vec3 d){
       float h = max(d.y, 0.0), s = max(dot(d, uSun), 0.0);
-      vec3 zen = vec3(0.13, 0.27, 0.55), hor = vec3(0.80, 0.78, 0.76), warm = vec3(1.0, 0.62, 0.34);
-      vec3 c = mix(hor, zen, pow(h, 0.42));
-      c = mix(c, warm, pow(s, 5.0) * (1.0 - h) * 0.9);
-      c += vec3(1.0, 0.78, 0.5) * pow(s, 48.0) * 0.7;
-      c += vec3(1.0, 0.95, 0.82) * smoothstep(0.9992, 0.9996, s) * 7.0;
+      vec3 zen = vec3(0.07, 0.17, 0.42), hor = vec3(0.70, 0.58, 0.54), warm = vec3(1.0, 0.5, 0.24);
+      vec3 c = mix(hor, zen, pow(h, 0.38));
+      c = mix(c, warm, pow(s, 4.0) * (1.0 - h) * 0.85);
+      c += vec3(1.0, 0.45, 0.18) * pow(s, 12.0) * 0.25 * (1.0 - h);   /* золотое зарево у горизонта */
+      c += vec3(1.0, 0.72, 0.42) * pow(s, 90.0) * 0.6;
+      c += vec3(1.0, 0.82, 0.55) * pow(s, 1500.0) * 1.6;               /* корона */
+      c += vec3(1.0, 0.95, 0.82) * smoothstep(0.99935, 0.99965, s) * 12.0;   /* диск солнца (яркий — его подхватит свечение) */
       return c;
     }`;
   const TAIL = '\n#include <tonemapping_fragment>\n#include <colorspace_fragment>\n';
@@ -3522,7 +3524,8 @@ const LOBBY = (() => {
           vec2 uv = d.xz / (d.y + 0.1) * 1.2 + vec2(uT * 0.004, uT * 0.0015);
           float cl = smoothstep(0.52, 0.86, fbm(uv)), s = max(dot(d, uSun), 0.0);
           vec3 cc = mix(vec3(0.93, 0.88, 0.86), vec3(1.0, 0.74, 0.5), pow(s, 3.0)) * (0.8 + 0.4 * pow(s, 10.0));
-          c = mix(c, cc, cl * 0.8 * smoothstep(0.0, 0.07, d.y));
+          cc += vec3(1.0, 0.7, 0.4) * pow(s, 60.0) * (1.0 - cl) * 1.2;   /* края облаков у солнца светятся */
+          c = mix(c, cc, cl * 0.8 * smoothstep(0.06, 0.2, d.y));          /* у горизонта небо чистое — солнце видно */
         } else c = mix(c, vec3(0.42, 0.5, 0.56), min(1.0, -d.y * 6.0));
         gl_FragColor = vec4(c, 1.0);` + TAIL + '}'}));
   sky.renderOrder = -1; LS.add(sky);
@@ -3571,19 +3574,49 @@ const LOBBY = (() => {
   const fillL = new THREE.DirectionalLight(0xfff0e0, 0.9); LS.add(fillL, fillL.target);   /* мягкий свет со стороны камеры, чтобы муха не была силуэтом */
 
   /* камни: гранит с крапинками, мокрый и с водорослями у воды, лишайник сверху */
-  const rockTex = (() => {
-    const c = document.createElement('canvas'); c.width = c.height = 512; const g = c.getContext('2d');
-    g.fillStyle = '#8c867d'; g.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 26000; i++) { const v = Math.random(), l = v < 0.5 ? 40 + Math.random() * 50 : 150 + Math.random() * 90; g.fillStyle = `rgba(${l},${l * 0.97},${l * 0.93},${0.25 + Math.random() * 0.5})`; const s = Math.random() < 0.9 ? 1 + Math.random() * 1.5 : 2 + Math.random() * 3; g.fillRect(Math.random() * 512, Math.random() * 512, s, s); }
-    for (let i = 0; i < 60; i++) { const x = Math.random() * 512, y = Math.random() * 512, r = 6 + Math.random() * 26; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(196,190,120,.35)'); gr.addColorStop(1, 'rgba(196,190,120,0)'); g.fillStyle = gr; g.fillRect(x - r, y - r, 2 * r, 2 * r); }
-    g.strokeStyle = 'rgba(30,26,22,.35)'; for (let i = 0; i < 18; i++) { g.lineWidth = 0.6 + Math.random(); g.beginPath(); let x = Math.random() * 512, y = Math.random() * 512; g.moveTo(x, y); for (let k = 0; k < 8; k++) { x += (Math.random() - 0.5) * 40; y += (Math.random() - 0.5) * 40; g.lineTo(x, y); } g.stroke(); }
-    const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
+  /* гранит: зёрна кварца, полевого шпата и слюды, выветривание, трещины, корочки лишайника.
+     Текстура бесшовная (всё рисуется с переносом через край), рельеф — отдельной картой высот. */
+  const [rockTex, rockBump] = (() => {
+    const S = 1024, mk = () => { const c = document.createElement('canvas'); c.width = c.height = S; return c; };
+    const cc = mk(), bc = mk(), g = cc.getContext('2d'), b = bc.getContext('2d');
+    const wrap = (fn, x, y, r) => { for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) if (x + dx > -r && x + dx < S + r && y + dy > -r && y + dy < S + r) fn(x + dx, y + dy); };
+    /* крупное выветривание: бесшовный шум (сумма синусов с целыми периодами) */
+    const img = g.createImageData(S, S), bimg = b.createImageData(S, S), wv = [];
+    for (let i = 0; i < 14; i++) { const f = 1 + Math.floor(Math.random() * (2 + i * 1.3)); wv.push([f * (Math.random() < 0.5 ? -1 : 1), 1 + Math.floor(Math.random() * (2 + i)), Math.random() * TAU, 1 / Math.pow(f, 0.8)]); }
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { let v = 0; for (const [fx, fy, ph, a] of wv) v += Math.sin((fx * x + fy * y) / S * TAU + ph) * a; v = v * 0.12; const k = (y * S + x) * 4, l = 128 + v * 60;
+      img.data[k] = l * 1.02; img.data[k + 1] = l * 0.99; img.data[k + 2] = l * 0.95; img.data[k + 3] = 255; bimg.data[k] = bimg.data[k + 1] = bimg.data[k + 2] = 128 + v * 40; bimg.data[k + 3] = 255; }
+    g.putImageData(img, 0, 0); b.putImageData(bimg, 0, 0);
+    /* зёрна минералов: угловатые многоугольники */
+    const grain = (n, rmin, rmax, cols, h) => { for (let i = 0; i < n; i++) { const x = Math.random() * S, y = Math.random() * S, r = rmin + Math.random() * (rmax - rmin), c = cols[Math.floor(Math.random() * cols.length)], m = 4 + Math.floor(Math.random() * 3), a0 = Math.random() * TAU, pts = [];
+      for (let k = 0; k < m; k++) { const a = a0 + k / m * TAU + (Math.random() - 0.5) * 0.8, rr = r * (0.55 + Math.random() * 0.6); pts.push([Math.cos(a) * rr, Math.sin(a) * rr * (0.6 + Math.random() * 0.5)]); }
+      wrap((px, py) => { for (const [ctx, col] of [[g, c], [b, h]]) { ctx.fillStyle = col; ctx.beginPath(); pts.forEach(([u, v], k) => k ? ctx.lineTo(px + u, py + v) : ctx.moveTo(px + u, py + v)); ctx.closePath(); ctx.fill(); } }, x, y, r); } };
+    grain(5200, 4, 11, ['rgba(214,196,178,.75)', 'rgba(226,206,190,.7)', 'rgba(198,176,160,.7)', 'rgba(232,222,206,.6)'], 'rgba(150,150,150,.55)');   /* полевой шпат */
+    grain(3600, 3, 8, ['rgba(176,178,180,.6)', 'rgba(205,207,208,.55)', 'rgba(150,152,156,.55)'], 'rgba(185,185,185,.6)');                           /* кварц — выступает */
+    grain(5200, 1.2, 3.6, ['rgba(34,30,28,.85)', 'rgba(52,46,42,.8)', 'rgba(20,20,22,.9)'], 'rgba(70,70,70,.7)');                                    /* слюда, роговая обманка */
+    /* мелкая пыль и поры */
+    for (let i = 0; i < 60000; i++) { const x = Math.random() * S, y = Math.random() * S, l = Math.random() < 0.5 ? 50 : 220; g.fillStyle = `rgba(${l},${l},${l - 8},${0.15 + Math.random() * 0.25})`; g.fillRect(x, y, 1, 1); if (l < 100) { b.fillStyle = 'rgba(40,40,40,.4)'; b.fillRect(x, y, 1, 1); } }
+    /* трещины */
+    for (let i = 0; i < 9; i++) { let x = Math.random() * S, y = Math.random() * S, a = Math.random() * TAU; const pts = [[x, y]]; for (let k = 0; k < 26; k++) { a += (Math.random() - 0.5) * 0.7; x += Math.cos(a) * 14; y += Math.sin(a) * 14; pts.push([x, y]); }
+      const w = 0.8 + Math.random() * 1.6; wrap((ox, oy) => { for (const [ctx, col, lw] of [[g, 'rgba(28,24,20,.55)', w], [b, 'rgba(10,10,10,.9)', w + 1]]) { ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.beginPath(); pts.forEach(([u, v], k) => k ? ctx.lineTo(u + ox - pts[0][0], v + oy - pts[0][1]) : ctx.moveTo(ox, oy)); ctx.stroke(); } }, pts[0][0], pts[0][1], 400); }
+    /* лишайник: жёлто-зелёные и рыжие корочки из точек */
+    for (let i = 0; i < 26; i++) { const cx = Math.random() * S, cy = Math.random() * S, R0 = 10 + Math.random() * 40, col = Math.random() < 0.7 ? [168, 170, 96] : [206, 128, 52];
+      for (let k = 0; k < R0 * 18; k++) { const a = Math.random() * TAU, r = R0 * Math.sqrt(Math.random()), s = 1 + Math.random() * 2.5; wrap((px, py) => { g.fillStyle = `rgba(${col[0]},${col[1]},${col[2]},${0.35 + Math.random() * 0.4})`; g.fillRect(px, py, s, s); b.fillStyle = 'rgba(170,170,170,.35)'; b.fillRect(px, py, s, s); }, cx + Math.cos(a) * r, cy + Math.sin(a) * r, 4); } }
+    const t = new THREE.CanvasTexture(cc); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+    const tb = new THREE.CanvasTexture(bc); tb.wrapS = tb.wrapT = THREE.RepeatWrapping; tb.anisotropy = 8;
+    return [t, tb];
   })();
-  const rockM = new THREE.MeshStandardMaterial({map:rockTex, bumpMap:rockTex, bumpScale:1.4, vertexColors:true, roughness:0.88});
+  const rockM = new THREE.MeshStandardMaterial({map:rockTex, bumpMap:rockBump, bumpScale:2.2, vertexColors:true, roughness:0.82});
+  /* против повторов: та же текстура второй раз — крупнее и повёрнутой, смешиваем */
+  rockM.onBeforeCompile = sh => {
+    sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `#ifdef USE_MAP
+      vec4 tA = texture2D(map, vMapUv), tB = texture2D(map, mat2(0.8, -0.6, 0.6, 0.8) * vMapUv * 0.37 + vec2(0.31, 0.17));
+      diffuseColor *= mix(tA, tB, 0.42) * 1.12;
+    #endif`);
+  };
   function rnd3(seed) { const a = []; let s = seed * 9301 + 49297; const r = () => (s = (s * 9301 + 49297) % 233280) / 233280; for (let i = 0; i < 9; i++) { const th = r() * TAU, ph = Math.acos(2 * r() - 1), f = [1.6, 2.7, 4.3, 7, 11, 17, 26, 40, 60][i]; a.push([Math.sin(ph) * Math.cos(th) * f, Math.cos(ph) * f, Math.sin(ph) * Math.sin(th) * f, r() * TAU, 1 / Math.pow(f, 0.95)]); } return (x, y, z) => { let v = 0; for (const q of a) v += Math.sin(q[0] * x + q[1] * y + q[2] * z + q[3]) * q[4]; return v; }; }
   const rocks = [];
-  function addRock(x, z, r, y0, sy, seed) {
-    const g = new THREE.SphereGeometry(r, 120, 80), p = g.attributes.position, col = [], n = rnd3(seed);
+  function addRock(x, z, r, y0, sy, seed, seg = 1) {
+    const g = new THREE.SphereGeometry(r, Math.round(120 * seg), Math.round(80 * seg)), p = g.attributes.position, col = [], n = rnd3(seed);
     for (let i = 0; i < p.count; i++) {
       let vx = p.getX(i) / r, vy = p.getY(i) / r, vz = p.getZ(i) / r;
       const d = 1 + 0.32 * n(vx, vy, vz) + 0.05 * Math.abs(n(vx * 3.1, vy * 3.1, vz * 3.1));
@@ -3598,11 +3631,11 @@ const LOBBY = (() => {
     g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
     /* текстура без растяжек у макушки: сверху — проекция сверху, по бокам — сбоку */
     const nm = g.attributes.normal, uv = g.attributes.uv;
-    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); if (Math.abs(nm.getY(i)) > 0.6) uv.setXY(i, x * 2.6, z * 2.6); else uv.setXY(i, (Math.abs(nm.getX(i)) > Math.abs(nm.getZ(i)) ? z : x) * 2.6, y * 2.6); }
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), y = p.getY(i), z = p.getZ(i); if (Math.abs(nm.getY(i)) > 0.6) uv.setXY(i, x * 13, z * 13); else uv.setXY(i, (Math.abs(nm.getX(i)) > Math.abs(nm.getZ(i)) ? z : x) * 13, y * 13); }
     const m = new THREE.Mesh(g, rockM); m.position.set(x, y0, z); m.receiveShadow = true; m.castShadow = true; LS.add(m);
     rocks.push({m, x, z, r:r * 0.98}); return m;
   }
-  const main = addRock(0, 0, 0.3, -0.07, 0.85, 7);
+  const main = addRock(0, 0, 0.3, -0.07, 0.85, 7, 2.6);
   addRock(-0.62, -0.75, 0.2, -0.09, 0.9, 3); addRock(1.0, -1.7, 0.42, -0.22, 0.8, 11); addRock(-2.4, -4.2, 0.9, -0.5, 0.75, 5);
   rocks.slice(0, 4).forEach((r, i) => U.uRocks.value[i].set(r.x, r.z, r.r, 1));
   /* далёкие острова в дымке */
@@ -3619,7 +3652,7 @@ const LOBBY = (() => {
   main.updateMatrixWorld(true);
   const YAW0 = Math.atan2(SUN.z, SUN.x) - 0.25;   /* смотрит на море, чуть левее солнца */
   const F = {p:V(), n:V(0, 1, 0), yaw:YAW0, act:'rest', actT:2, ph:0, name:''};
-  { const q = onRock(Math.cos(YAW0) * 0.15, Math.sin(YAW0) * 0.15) || onRock(0, 0) || {p:V(0, 0.2, 0), n:V(0, 1, 0)}; F.p = q.p; F.n = q.n; }   /* на краю камня, обращённом к морю */
+  { const q = onRock(Math.cos(YAW0) * 0.04, Math.sin(YAW0) * 0.04) || onRock(0, 0) || {p:V(0, 0.2, 0), n:V(0, 1, 0)}; F.p = q.p; F.n = q.n; }   /* на краю камня, обращённом к морю */
 
   /* мёд */
   const honeyM = new THREE.MeshPhysicalMaterial({color:0xe39418, roughness:0.08, clearcoat:1, transmission:0.35, thickness:0.002, emissive:0x3a1d00});
@@ -3697,12 +3730,15 @@ const LOBBY = (() => {
     /* камера: медленно плывёт вокруг мухи, мышь чуть сдвигает */
     camA += (camGoal - camA) * Math.min(1, dt * 2);
     /* камера сзади-сбоку: видно муху и море, на которое она смотрит */
-    const a = -Math.PI / 2 - YAW0 + 0.12 + Math.sin(t * 0.05) * 0.2 + mx * 0.25, e = 0.24 + Math.sin(t * 0.07) * 0.04 - my * 0.08, dist = 0.1 + Math.sin(t * 0.04) * 0.01;
+    /* камера неподвижна: муха в центре, за ней море и солнце */
+    const a = -Math.PI / 2 - YAW0 + CAMP.da, e = CAMP.e, dist = CAMP.dist;
+    if (cam.fov !== CAMP.fov) { cam.fov = CAMP.fov; cam.updateProjectionMatrix(); }
     const tg = _t.set(F.p.x, F.p.y + 0.004, F.p.z);
     cam.position.set(tg.x + Math.sin(a) * Math.cos(e) * dist, tg.y + Math.sin(e) * dist, tg.z + Math.cos(a) * Math.cos(e) * dist);
     /* камера не должна уходить в камень и терять муху за бугром: поднимаем, пока луч до мухи свободен */
-    { let lift = 0; for (let k = 0; k < 12; k++) { let blocked = false; for (let s = 0.1; s < 0.8; s += 0.1) { const x = cam.position.x + (tg.x - cam.position.x) * s, z = cam.position.z + (tg.z - cam.position.z) * s, y = cam.position.y + lift + (tg.y - cam.position.y - lift) * s, q = rockH(x, z); if (q !== null && q + 0.0015 > y) { blocked = true; break; } } if (!blocked) break; lift += 0.003; }
-      camLift += (lift - camLift) * Math.min(1, dt * 3); cam.position.y += camLift; }
+    { const key = CAMP.da + '|' + CAMP.e + '|' + CAMP.dist;   /* камера не уходит под поверхность камня (считаем один раз — она неподвижна) */
+      if (camKey !== key) { camKey = key; const q = onRock(cam.position.x, cam.position.z); camLift = q ? Math.max(0, q.p.y + 0.005 - cam.position.y) : 0; }
+      cam.position.y += camLift; }
     /* муха — в центре кадра; совсем чуть выше, чтобы горизонт и море были видны */
     cam.lookAt(tg.x, tg.y + dist * 0.03, tg.z);
     sky.position.copy(cam.position);
@@ -3715,6 +3751,7 @@ const LOBBY = (() => {
     MUS.frame(dt);
   }
   let nextWave = 3, camA = 0, camGoal = 0, mx = 0, my = 0, camLift = 0;
+  const CAMP = {da:-0.02, e:0.1, dist:0.08, fov:44}; let camKey = '';
   /* высота камня в точке — по сетке, заранее (луч по 10 000 треугольникам каждый кадр дорогой) */
   const HG = 48, HR = 0.4, hgrid = new Float32Array(HG * HG).fill(-9);
   { const p = main.geometry.attributes.position, o = main.position;
@@ -3803,9 +3840,30 @@ const LOBBY = (() => {
     g.font = '600 9px system-ui'; g.fillStyle = 'rgba(255,255,255,.6)'; g.textAlign = 'left'; g.fillText('чувства', 2, LH - 1); g.textAlign = 'right'; g.fillText('движения', LW - 2, LH - 1);
   }
   const _sz = new THREE.Vector2();
+  /* своя постобработка: свечение солнца и бликов, тёплый закатный тон, виньетка */
+  const LC = new EffectComposer(renderer, new THREE.WebGLRenderTarget(1, 1, {type:THREE.HalfFloatType, samples:4}));
+  LC.addPass(new RenderPass(LS, cam));
+  const lBloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.3, 0.35, 2.2); LC.addPass(lBloom);
+  const lGrade = new ShaderPass({uniforms:{tDiffuse:{value:null}, uT:{value:0}},
+    vertexShader:'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader:`uniform sampler2D tDiffuse; uniform float uT; varying vec2 vUv;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233)) + uT) * 43758.5453); }
+      void main(){
+        vec2 c = vUv - 0.5; vec3 col = texture2D(tDiffuse, vUv).rgb;
+        col *= mix(0.62, 1.0, smoothstep(0.9, 0.25, length(c * vec2(1.0, 0.8))));
+        float l = dot(col, vec3(0.299, 0.587, 0.114));
+        col = mix(col, col * vec3(1.08, 0.98, 0.86), 0.5) + vec3(0.012, 0.004, -0.004) * (1.0 - l);   /* тёплые света, чуть холодные тени */
+        col = clamp(col, 0.0, 1.0); col = mix(col, col * col * (3.0 - 2.0 * col), 0.35);   /* контраст */
+        col += (h(vUv * 911.0) - 0.5) * 0.008;
+        gl_FragColor = vec4(col, 1.0);
+      }`});
+  LC.addPass(new OutputPass()); LC.addPass(lGrade);   /* тон после перевода в экранные цвета */
+  let lcW = 0, lcH = 0;
   function render() {
     renderer.getSize(_sz); if (Math.abs(cam.aspect - _sz.x / _sz.y) > 1e-3) { cam.aspect = _sz.x / _sz.y; cam.updateProjectionMatrix(); }
-    renderer.shadowMap.needsUpdate = true; renderer.setRenderTarget(null); renderer.render(LS, cam);
+    if (_sz.x !== lcW || _sz.y !== lcH) { lcW = _sz.x; lcH = _sz.y; LC.setPixelRatio(renderer.getPixelRatio()); LC.setSize(lcW, lcH); lBloom.resolution.set(lcW, lcH); }
+    lGrade.uniforms.uT.value = U.uT.value % 100;
+    renderer.shadowMap.needsUpdate = true; LC.render();
   }
   function show(on) { $('#lobbyCard').hidden = !on; if (on) MUS.start(); else MUS.stop(); }
   $('#lbHoney').onclick = giveHoney;
@@ -3898,7 +3956,7 @@ const LOBBY = (() => {
   /* браузер разрешает звук только после первого клика или клавиши */
   const wake = () => { initAudio(); if (G.mode === 'menu' && !MUS.isOn()) MUS.start(); };
   addEventListener('pointerdown', wake, true); addEventListener('keydown', wake, true);
-  return {frame, render, show, giveHoney, F, get D() { return D; }, scene:LS, cam};
+  return {frame, render, show, giveHoney, F, get D() { return D; }, scene:LS, cam, CAMP, get lift() { return camLift; }};
 })();
 
 /* ================= ПЕСОЧНИЦА: колонии мух, ты — бог ================= */
