@@ -1384,7 +1384,24 @@ composer.addPass(grade); composer.addPass(new OutputPass());
 function resize() { const w = innerWidth, h = innerHeight; renderer.setSize(w, h, false); composer.setPixelRatio(renderer.getPixelRatio()); composer.setSize(w, h); bloom.resolution.set(w, h); gtao.setSize(w * renderer.getPixelRatio(), h * renderer.getPixelRatio()); camera.aspect = w / h; camera.updateProjectionMatrix(); }
 addEventListener('resize', resize); resize();
 let shakeK = 0;
+/* полупрозрачные текстуры (пятна, крылья, стекло, свечение):
+   1) без мип-уровней — иначе под острым углом пятно усредняется в сплошной серый квадрат;
+   2) не отбрасывают тень — карта теней не знает про прозрачность и рисует прямоугольник;
+   3) не участвуют в проходе затенения GTAO — он видит их как непрозрачные плоскости */
+const _alphaFixed = new WeakSet(); let _alphaT = 0;
+function fixAlpha() {
+  scene.traverse(o => {
+    if (!o.isMesh || _alphaFixed.has(o)) return; _alphaFixed.add(o);
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (!m || !m.transparent || m.alphaTest > 0) continue;
+      o.castShadow = false;
+      for (const t of [m.map, m.alphaMap]) if (t && !t.userData.noMip && t.repeat.x <= 1 && t.repeat.y <= 1) { t.userData.noMip = 1; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter; t.needsUpdate = true; }
+    }
+  });
+}
+if (gtao.overrideVisibility) { const ov = gtao.overrideVisibility.bind(gtao); gtao.overrideVisibility = function () { ov(); scene.traverse(o => { if (!o.visible) return; const m = o.material; if (o.isSprite || (o.isMesh && m && !Array.isArray(m) && m.transparent)) o.visible = false; }); }; }
 function draw() {
+  if (--_alphaT <= 0) { _alphaT = 30; fixAlpha(); }
   if (shakeK > 0.001) { camera.position.x += (Math.random() - 0.5) * shakeK * 0.03; camera.position.y += (Math.random() - 0.5) * shakeK * 0.03; shakeK *= 0.88; } else shakeK = 0;
   if (store.settings.fx) { grade.uniforms.uT.value = (performance.now() % 10000) / 1000; grade.uniforms.uShake.value = shakeK; composer.render(); }
   else renderer.render(scene, camera);
@@ -1474,6 +1491,8 @@ const newsTex = canvasTex(256, 256, (g, w, h) => {
   for (let y = 50; y < h; y += 9) for (let x = 10; x < w - 10; x += R(20, 50)) { g.fillStyle = `rgba(30,30,30,${R(0.3, 0.7)})`; g.fillRect(x, y, R(10, 40), 4); }
 }, [1, 1]);
 const softTex = canvasTex(64, 64, (g, w, h) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.4, 'rgba(255,255,255,.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); }, null, false);
+/* без мип-уровней и без повтора: иначе под острым углом пятно усредняется в серый квадрат */
+softTex.wrapS = softTex.wrapT = THREE.ClampToEdgeWrapping; softTex.generateMipmaps = false; softTex.minFilter = THREE.LinearFilter;
 const ringTex = canvasTex(64, 64, (g) => { g.strokeStyle = 'rgba(255,201,74,1)'; g.lineWidth = 4; g.beginPath(); g.arc(32, 32, 26, 0, TAU); g.stroke(); }, null);
 const splatTex = canvasTex(128, 128, (g) => {
   g.fillStyle = 'rgba(40,25,15,.85)'; g.beginPath(); g.arc(64, 64, 20, 0, TAU); g.fill();
@@ -1880,7 +1899,8 @@ function makeFly(dead = false) {
     part(sph, new THREE.MeshStandardMaterial({color:0xcfc6a8, roughness:0.5}), 0.00022, 0.00022, 0.00022, -0.0008, 0.0031, s * 0.0013);
   }
   g.scale.setScalar(FLY_SCALE);
-  g.traverse(o => { if (o.isMesh) o.castShadow = true; });
+  /* муха меньше пикселя карты теней — её тень из shadow map выходит рваным квадратом; тень даёт мягкое пятно flyBlob */
+  g.traverse(o => { if (o.isMesh) o.castShadow = false; });
   g.userData = {wings, body, legs};
   return g;
 }
