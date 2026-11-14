@@ -35,7 +35,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .slot .cd{position:absolute;left:6px;right:6px;bottom:5px;height:3px;border-radius:2px;background:rgba(255,255,255,.12);overflow:hidden}
 .slot .cd i{display:block;height:100%;width:100%;background:var(--good)}
 #sneakTag{position:absolute;left:50%;bottom:92px;transform:translateX(-50%);padding:4px 12px;border-radius:99px;font-size:12px;color:#bfe7ff;background:rgba(40,80,110,.45);border:1px solid rgba(150,210,255,.3)}
-#brainBox{position:absolute;left:16px;bottom:16px;padding:8px 10px 8px;width:300px}
+#brainBox{position:absolute;left:16px;bottom:16px;padding:8px 10px 8px;width:300px;backdrop-filter:none;-webkit-backdrop-filter:none;background:rgba(14,18,26,.86);contain:layout paint}
 #brainBox .hd{display:flex;justify-content:space-between;align-items:baseline;font-size:11.5px;color:var(--mute);margin-bottom:4px}
 #brainBox .hd b{color:var(--ink);font-weight:600}
 #brainCv{display:block;width:280px;height:132px}
@@ -92,6 +92,8 @@ h1 em{font-style:normal;color:var(--acc)}
 #legend{display:none;font-size:11px;color:var(--mute);margin-top:4px;line-height:1.5}
 #brainBox.dev #legend{display:block}
 #brainBox.pain{animation:pain 1.4s ease-out}
+#eyesFx{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse 62% 70% at 50% 50%,transparent 55%,rgba(0,0,0,.55) 85%,#000 100%);mix-blend-mode:multiply}
+#eyesFx::after{content:'';position:absolute;inset:0;opacity:.13;background-image:radial-gradient(circle at 50% 50%,transparent 55%,rgba(0,0,0,.9) 75%);background-size:9px 8px}
 @keyframes pain{0%{box-shadow:0 0 0 2px var(--bad),0 0 34px rgba(255,90,110,.6)}100%{box-shadow:0 0 0 0 transparent}}
 /* замах */
 #wring{--p:0;position:absolute;left:50%;top:50%;width:38px;height:38px;margin:-19px 0 0 -19px;border-radius:50%;opacity:calc(var(--p) * 4);
@@ -265,12 +267,12 @@ h1 em{font-style:normal;color:var(--acc)}
     <div class="row"><button class="btn" id="achBack">Назад</button></div>
   </div>
 </div>
-<div id="obsUI" hidden>
+<div id="obsUI" hidden><div id="eyesFx" hidden></div>
   <div class="glass" id="obsCard"><div class="nm">🔍 Наблюдение · <span id="oName">Муха Обыкновенная</span></div><div id="oAct" class="oact">отдыхает</div>
     <div class="kv" id="oStats"></div></div>
   <div class="glass" id="obsBar">
     <div class="seg" id="oSpeed"></div>
-    <button class="btn" id="oFeed">🍬 Покормить</button><button class="btn" id="oScare">👏 Спугнуть</button><button class="btn" id="oMacro">🔬 Макро</button><button class="btn" id="oBack">Назад</button>
+    <button class="btn" id="oFeed">🍬 Покормить</button><button class="btn" id="oScare">👏 Спугнуть</button><button class="btn" id="oMacro">🔬 Макро</button><button class="btn" id="oEyes">👁 Её глазами</button><button class="btn" id="oBack">Назад</button>
   </div>
   <div class="ohint">тяни мышью — вращать камеру · колесо — приблизить</div>
 </div>
@@ -802,8 +804,8 @@ var SIM = (function () {
           if (f.turnLeft) { const st = clamp(f.turnLeft, -dt * 3.5, dt * 3.5); f.yaw += st; f.turnLeft -= st; if (Math.abs(f.turnLeft) < 1e-3) f.turnLeft = 0; }
           if (f.walkT > 0 && !f.turnLeft) {
             f.walkT -= dt;
-            f.wander += (gauss() * 1.5 - f.wander * 2) * dt;
-            f.yaw += (clamp(turn, -1.3, 1.3) * 0.6 + f.wander * 0.5) * dt;
+            if (f.goFood) f.yaw += clamp(angDiff(f.yaw, Math.atan2(f.goFood.p.z - f.p.z, f.goFood.p.x - f.p.x)), -dt * 4, dt * 4);   /* идёт к еде прямо, без виляний */
+            else { f.wander += (gauss() * 1.5 - f.wander * 2) * dt; f.yaw += (clamp(turn, -1.3, 1.3) * 0.6 + f.wander * 0.5) * dt; }
             const ws = f.walkV;
             const nx = f.p.x + Math.cos(f.yaw) * ws * dt, nz = f.p.z + Math.sin(f.yaw) * ws * dt;
             const a = (nx - s.c.x) * s.u.x + (nz - s.c.z) * s.u.z, bb = (nx - s.c.x) * s.v.x + (nz - s.c.z) * s.v.z;
@@ -814,18 +816,26 @@ var SIM = (function () {
             f.pauseT -= dt;
             if (f.pauseT <= 0 && !f.eating) {
               let tl = Math.random() < 0.5 ? 0 : gauss() * 0.5 + clamp(turn, -1.3, 1.3) * 0.35;   /* оглядывается спокойно: часто просто идёт дальше */
-              if (s.food && f.energy < 0.8) { let bd = 0.6, fd0 = null; for (const fd of FOOD) { const d = Math.hypot(fd.p.x - f.p.x, fd.p.z - f.p.z); if (d < bd && d > fd.r * 0.8 && Math.abs(fd.p.y - f.p.y) < 0.05) { bd = d; fd0 = fd; } } if (fd0) tl = angDiff(f.yaw, Math.atan2(fd0.p.z - f.p.z, fd0.p.x - f.p.x)) + gauss() * 0.3; }   /* учуяла сладкое — идёт к нему */
-              f.turnLeft = clamp(tl, -1.6, 1.6);
-              f.walkT = rnd(0.2, 1.3) * clamp(0.7 + fwd * 0.5, 0.3, 1.4); f.walkV = rnd(0.04, 0.1);
-              f.pauseT = rnd(0.4, 3.0);
+              let fd0 = null, bd = 0.6;
+              if (s.food && f.energy < 0.8) for (const fd of FOOD) { const d = Math.hypot(fd.p.x - f.p.x, fd.p.z - f.p.z); if (d < bd && d > fd.r * 0.7 && Math.abs(fd.p.y - f.p.y) < 0.05) { bd = d; fd0 = fd; } }
+              f.goFood = fd0;
+              if (fd0) {   /* учуяла сладкое рядом — разворачивается прямо к нему и идёт ровно столько, сколько нужно */
+                f.turnLeft = angDiff(f.yaw, Math.atan2(fd0.p.z - f.p.z, fd0.p.x - f.p.x));
+                f.walkV = 0.08; f.walkT = Math.max(0.1, (bd - fd0.r * 0.5) / f.walkV); f.pauseT = 0.15;
+              } else {
+                f.turnLeft = clamp(tl, -1.6, 1.6);
+                f.walkT = rnd(0.2, 1.3) * clamp(0.7 + fwd * 0.5, 0.3, 1.4); f.walkV = rnd(0.04, 0.1);
+                f.pauseT = rnd(0.4, 3.0);
+              }
             }
           }
           f.eating = false;
           if (s.food) for (const fd of FOOD) { if (Math.hypot(f.p.x - fd.p.x, f.p.z - fd.p.z) < fd.r && Math.abs(f.p.y - fd.p.y) < 0.05) { f.eating = true; break; } }
-          if (f.eating && f.energy < 0.98) { f.walkT = 0; f.pauseT = Math.max(f.pauseT, 0.3); }
+          if (f.eating && f.energy < 0.98) { f.walkT = 0; f.goFood = null; f.pauseT = Math.max(f.pauseT, 0.3); }
+          if (f.walkT <= 0) f.goFood = null;
         } else f.eating = false;
         if (f.eating) { f.energy = Math.min(1, f.energy + dt * 0.25); f.food += dt; f.eatT += dt; if (f.eatT > 0.8) { f.eatT = 0; reward(f, 1, W); } }
-        if (f.energy > 0.05 && f.restT > 0.6 && !(f.eating && f.energy < 0.95) && (flyDrive > b.thFly * (f.gene.calm || 1) || f.restT > f.restMax || f.dens > 0.08)) {
+        if (f.energy > 0.05 && f.restT > 0.6 && !(f.eating && f.energy < 0.95) && (flyDrive > b.thFly * (f.gene.calm || 1) * (f.goFood ? 1.8 : 1) || (!f.goFood && (f.restT > f.restMax || f.dens > 0.08)))) {
           f.landed = false; f.flyT = 0; f.target = null; f.alt = rnd(0.7, 2.2);
           f.v.x = f.n.x * 0.6 + Math.cos(f.yaw) * 0.5; f.v.y = f.n.y * 0.6 + 0.2; f.v.z = f.n.z * 0.6 + Math.sin(f.yaw) * 0.5;
           f.p.x += f.n.x * 0.005; f.p.y += f.n.y * 0.005; f.p.z += f.n.z * 0.005;
@@ -1454,8 +1464,15 @@ function fixAlpha() {
   });
 }
 if (gtao.overrideVisibility) { const ov = gtao.overrideVisibility.bind(gtao); gtao.overrideVisibility = function () { ov(); scene.traverse(o => { if (!o.visible) return; const m = o.material; if (o.isSprite || (o.isMesh && m && !Array.isArray(m) && m.transparent)) o.visible = false; }); }; }
+/* тени: комната неподвижна, а муха отбрасывает мягкое пятно сама — карту теней (4096²) перерисовываем редко,
+   каждый кадр только пока летит тапок/снаряд */
+renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = true;
+let _shT = 0, _shLast = performance.now();
 function draw() {
   if (--_alphaT <= 0) { _alphaT = 30; fixAlpha(); }
+  { const now = performance.now(); _shT += (now - _shLast) / 1000; _shLast = now;
+    const moving = G.mode === 'play' && G.W && G.W.proj && G.W.proj.some(p => p.alive && !(p.rest > 0));
+    if (moving || _shT > 0.5) { _shT = 0; renderer.shadowMap.needsUpdate = true; } }
   if (shakeK > 0.001) { camera.position.x += (Math.random() - 0.5) * shakeK * 0.03; camera.position.y += (Math.random() - 0.5) * shakeK * 0.03; shakeK *= 0.88; } else shakeK = 0;
   if (store.settings.fx) { grade.uniforms.uT.value = (performance.now() % 10000) / 1000; grade.uniforms.uShake.value = shakeK; composer.render(); }
   else renderer.render(scene, camera);
@@ -2551,7 +2568,12 @@ function drawBrain(f, dev) {
   if (!BPOS || brainCv.clientWidth !== BW) layoutBrain();
   const g = bctx, dpr = Math.min(devicePixelRatio, 2); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, BW, BH);
   const r = f ? f.brain.r : null, wts = f ? f.brain.w : D.EW0;
-  if (dev && f) {   /* связи мухи: что усилилось (награда) и что ослабло (боль, смерть) с момента рождения */
+  if (dev && f) {   /* связи мухи: что усилилось (награда) и что ослабло (боль, смерть) с момента рождения — слой синапсов рисуем раз в 0.5 с в запасной холст */
+    const nowT = performance.now();
+    if (!drawBrain.cv || drawBrain.cv.width !== brainCv.width || drawBrain.cv.height !== brainCv.height || drawBrain.f !== f || nowT - drawBrain.t > 500) {
+      drawBrain.t = nowT; drawBrain.f = f;
+      const cv2 = drawBrain.cv || (drawBrain.cv = document.createElement('canvas')); cv2.width = brainCv.width; cv2.height = brainCv.height;
+      const g0 = g; { const g = cv2.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, BW, BH);
     const w0 = f.brain.w0, up = [[], [], []], dn = [[], [], []];
     for (let e = 0; e < D.BE; e++) {
       const a0 = Math.abs(w0[e]); if (a0 < 1e-6) continue;
@@ -2564,6 +2586,8 @@ function drawBrain(f, dev) {
     for (const [set, col] of [[up, '124,242,154'], [dn, '255,90,110']]) for (let k = 0; k < 3; k++) { if (!set[k].length) continue; g.strokeStyle = 'rgba(' + col + ',' + al[k] + ')'; g.lineWidth = lw[k]; g.beginPath(); for (const e of set[k]) { const a = D.EA[e], b = D.EB[e]; g.moveTo(BPOS[2 * a], BPOS[2 * a + 1]); g.lineTo(BPOS[2 * b], BPOS[2 * b + 1]); } g.stroke(); }
     const nu = up[0].length + up[1].length + up[2].length, nd = dn[0].length + dn[1].length + dn[2].length;
     $('#lgN').textContent = `изменено синапсов: ${nu + nd} из ${D.BE} · ↑${nu} ↓${nd}`;
+      } }
+    g.setTransform(1, 0, 0, 1, 0, 0); g.drawImage(drawBrain.cv, 0, 0); g.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
   g.lineWidth = 0.6;
   if (!dev) { g.strokeStyle = 'rgba(124,242,154,.09)'; g.beginPath(); for (const e of STRONG) { const a = D.EA[e], b = D.EB[e]; g.moveTo(BPOS[2 * a], BPOS[2 * a + 1]); g.lineTo(BPOS[2 * b], BPOS[2 * b + 1]); } g.stroke(); }
@@ -2750,14 +2774,14 @@ const EYE = (() => {
   const cam = new THREE.PerspectiveCamera(110, EW / EH, 0.004, 14);
   const px = new Uint8Array(W2 * EH * 4), lum = new Float32Array(W2 * EH), prev = new Float32Array(W2 * EH);
   const cv = $('#eyeCv'), g = cv.getContext('2d'), img = g.createImageData(W2, EH);
-  let acc = 0, has = false, lastYaw = 0, lastP = {x:0, y:0, z:0}; const st = {L:0, R:0};
+  let acc = 0, has = false, lastYaw = 0, lastP = {x:0, y:0, z:0}, pbo = null, fence = null; const st = {L:0, R:0};
   function update(f, dt) {
     if (!f || !f.alive || G.won) { if (f) f.vis = null; has = false; return; }
     acc += dt; if (acc < 0.05) return; const step = acc; acc = 0;
     const up = f.landed && f.n && f.n.y < 0.6 ? f.n : {x:0, y:1, z:0};
     const hx = f.p.x + Math.cos(f.yaw) * 0.004 + up.x * 0.004, hy = f.p.y + up.y * 0.004 + 0.001, hz = f.p.z + Math.sin(f.yaw) * 0.004 + up.z * 0.004;
     const hide = [flyObj, flyBlob, ring, muzzle], was = hide.map(o => o.visible); for (const o of hide) o.visible = false;
-    const sm = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
+    const sm = renderer.shadowMap.autoUpdate, sn = renderer.shadowMap.needsUpdate; renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = false;
     const oldRT = renderer.getRenderTarget(); renderer.setRenderTarget(rt);
     for (let e = 0; e < 2; e++) {   /* e=0 — левый глаз (смотрит влево-вперёд), e=1 — правый */
       const a = f.yaw + (e ? 0.85 : -0.85);
@@ -2765,12 +2789,20 @@ const EYE = (() => {
       rt.viewport.set(e * EW, 0, EW, EH); rt.scissor.set(e * EW, 0, EW, EH); renderer.setRenderTarget(rt);
       renderer.render(scene, cam);
     }
-    renderer.readRenderTargetPixels(rt, 0, 0, W2, EH, px);
-    renderer.setRenderTarget(oldRT); renderer.shadowMap.autoUpdate = sm; hide.forEach((o, i) => o.visible = was[i]);
+    /* читаем картинку асинхронно (через буфер видеокарты), иначе синхронное чтение останавливает весь кадр */
+    const gl = renderer.getContext(), gl2 = typeof WebGL2RenderingContext !== 'undefined' && gl instanceof WebGL2RenderingContext;
+    let fresh = false;
+    if (gl2) {
+      if (!pbo) { pbo = gl.createBuffer(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, px.length, gl.STREAM_READ); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); }
+      if (fence) { const s = gl.clientWaitSync(fence, 0, 0); if (s === gl.ALREADY_SIGNALED || s === gl.CONDITION_SATISFIED) { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, px); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); gl.deleteSync(fence); fence = null; fresh = true; } }
+      if (!fence) { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo); gl.readPixels(0, 0, W2, EH, gl.RGBA, gl.UNSIGNED_BYTE, 0); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush(); }
+    } else { renderer.readRenderTargetPixels(rt, 0, 0, W2, EH, px); fresh = true; }
+    renderer.setRenderTarget(oldRT); renderer.shadowMap.autoUpdate = sm; renderer.shadowMap.needsUpdate = sn; hide.forEach((o, i) => o.visible = was[i]);
+    if (!fresh) { f.vis = {L:st.L, R:st.R}; return; }
     for (let y = 0; y < EH; y++) for (let x = 0; x < W2; x++) { const i = ((EH - 1 - y) * W2 + x), j = (y * W2 + x) * 4; lum[i] = Math.sqrt((0.3 * px[j] + 0.59 * px[j + 1] + 0.11 * px[j + 2]) / 255); }
     /* своё движение даёт «поток» по всей картинке — пока муха идёт или поворачивает, движению верим меньше */
     const moved = Math.hypot(f.p.x - lastP.x, f.p.y - lastP.y, f.p.z - lastP.z), turned = Math.abs(angDiff(lastYaw, f.yaw));
-    const k = f.landed && moved < 0.004 && turned < 0.06 ? 1 : f.landed ? 0.3 : 0;   /* в полёте весь мир несётся мимо — на зрение не полагаемся */
+    const k = f.landed && moved < 0.004 && turned < 0.06 ? 1 : f.landed ? 0.12 : 0;   /* в полёте весь мир несётся мимо — на зрение не полагаемся */
     if (f.landed !== st.wasL || moved > 0.02 || turned > 0.35) has = false;   /* сел/взлетел/резко развернулся — картинка сменилась целиком, это не угроза */
     st.wasL = f.landed; lastYaw = f.yaw; lastP = {x:f.p.x, y:f.p.y, z:f.p.z};
     const out = [0, 0];
@@ -3143,6 +3175,13 @@ const OBS = (() => {
   const st = {t:0, steps:0, flights:0, dist:0, eat:0, groom:0};
   const crumbs = [];
   let speed = 1, cam = {yaw:0.7, pitch:0.35, dist:0.55, tgt:V(), drag:false, lx:0, ly:0, idle:0}, uiT = 0, macro = false, slowFly = 0;
+  let eyes = false; const eyeLook = {yaw:0, pitch:0}, eyeCam = {fx:1, fy:0, fz:0, ux:0, uy:1, uz:0, k:1, yawPrev:0};
+  function setEyes(on) {
+    eyes = on; $('#oEyes').classList.toggle('pri', on); $('#eyesFx').hidden = !on; obj.visible = !on && G.mode === 'obs';
+    camera.near = on ? 0.0006 : 0.012; camera.fov = on ? 100 : 72; camera.updateProjectionMatrix();
+    eyeLook.yaw = eyeLook.pitch = 0; const d = f.landed ? f.hd : f.v, l = Math.hypot(d.x, d.y, d.z) || 1; Object.assign(eyeCam, {fx:d.x / l, fy:d.y / l, fz:d.z / l, ux:0, uy:1, uz:0});
+    if (on) macro = false, $('#oMacro').classList.remove('pri'); else camera.up.set(0, 1, 0);
+  }
   const _X = new THREE.Vector3(), _Y = new THREE.Vector3(), _Z = new THREE.Vector3(), _M = new THREE.Matrix4();
   const foods = () => S.FOOD.concat(crumbs.map(c => c.food));
   function surfOf(p, n) {   /* индекс поверхности, на которой точка */
@@ -3156,7 +3195,8 @@ const OBS = (() => {
   function setAct(a, t) { f.act = a; f.actT = t; if (a.startsWith('groom')) { st.groom++; if (st.groom >= 5) ACH.give('groom'); } }
   function foodHere() { const s = S.LAND[f.surf]; let best = null, bd = 0.7; for (const fd of foods()) { if (Math.abs((fd.p.x - f.p.x) * s.n.x + (fd.p.y - f.p.y) * s.n.y + (fd.p.z - f.p.z) * s.n.z) > 0.03) continue; const d = d3(fd.p, f.p); if (d < bd) { bd = d; best = fd; } } return best; }
   function chooseLanded() {
-    const s = S.LAND[f.surf], fd = foodHere(), hungry = f.energy < 0.6;
+    if (f.lure && (f.energy >= 0.95 || !crumbs.some(c => c.food === f.lure))) f.lure = null;
+    const s = S.LAND[f.surf], fd = foodHere(), hungry = f.energy < 0.6 || (f.lure && f.energy < 0.95);
     if (fd && hungry) { if (d3(fd.p, f.p) < fd.r * 0.8) return setAct('eat', rnd(4, 10)); f.goal = fd; return setAct('seek', 4); }
     if (s.name === 'окно' && Math.random() < 0.4) return setAct('sun', rnd(3, 8));
     const r = Math.random();
@@ -3176,6 +3216,10 @@ const OBS = (() => {
     setAct(scared ? 'scared' : 'takeoff', 0.25);
   }
   function chooseLanding() {
+    if (f.lure && f.energy < 0.95 && crumbs.some(c => c.food === f.lure)) {   /* садится рядом с сахаром, который ей насыпали */
+      const lp = f.lure.p, a = rnd(TAU), p = V(lp.x + Math.cos(a) * 0.05, lp.y, lp.z + Math.sin(a) * 0.05), surf = surfOf(p, V(0, 1, 0));
+      return {p, n:V(0, 1, 0), surf};
+    }
     let best = null, bs = 1e9;
     for (let k = 0; k < 8; k++) {
       const q = S.randomLand(); if (!q) continue; const s = S.LAND[q.surf];
@@ -3279,9 +3323,28 @@ const OBS = (() => {
     /* камера: вращаешь мышью, сама медленно облетает, если не трогать */
     cam.idle += dt; if (!cam.drag && cam.idle > 3) cam.yaw += dt * 0.12;
     const k = Math.min(1, dt * (f.landed ? 3 : 6)); cam.tgt.x = lerp(cam.tgt.x, f.p.x, k); cam.tgt.y = lerp(cam.tgt.y, f.p.y, k); cam.tgt.z = lerp(cam.tgt.z, f.p.z, k);
+    if (eyes) {   /* от её глаз: камера в голове, смотрит туда, куда смотрит муха; мышью можно чуть повести «взглядом» */
+      obj.visible = false; prob.visible = false;
+      let fx, fy, fz, ux, uy, uz;
+      if (f.landed) { fx = f.hd.x; fy = f.hd.y; fz = f.hd.z; ux = f.n.x; uy = f.n.y; uz = f.n.z; }
+      else { const l = Math.hypot(f.v.x, f.v.y, f.v.z) || 1; fx = f.v.x / l; fy = f.v.y / l; fz = f.v.z / l; if (l < 0.05) { fx = Math.cos(f.yaw); fy = 0; fz = Math.sin(f.yaw); } ux = 0; uy = 1; uz = 0; }
+      _X.set(fx, fy, fz); _Y.set(ux, uy, uz); _Z.crossVectors(_X, _Y).normalize();
+      const hx = f.p.x + fx * 0.0032 + ux * 0.0024, hy = f.p.y + fy * 0.0032 + uy * 0.0024, hz = f.p.z + fz * 0.0032 + uz * 0.0024;
+      const d = V(fx, fy, fz), lk = rotAround(V(ux, uy, uz), d, -eyeLook.yaw);
+      const side = V(_Z.x, _Z.y, _Z.z), lk2 = rotAround(side, lk, eyeLook.pitch + (f.landed ? 0.12 : 0));
+      eyeCam.k = Math.min(1, dt * (f.landed ? 8 : 5));
+      eyeCam.fx = lerp(eyeCam.fx, lk2.x, eyeCam.k); eyeCam.fy = lerp(eyeCam.fy, lk2.y, eyeCam.k); eyeCam.fz = lerp(eyeCam.fz, lk2.z, eyeCam.k);
+      eyeCam.ux = lerp(eyeCam.ux, ux, eyeCam.k); eyeCam.uy = lerp(eyeCam.uy, uy, eyeCam.k); eyeCam.uz = lerp(eyeCam.uz, uz, eyeCam.k);
+      camera.position.set(hx, hy, hz); camera.up.set(eyeCam.ux, eyeCam.uy, eyeCam.uz); camera.lookAt(hx + eyeCam.fx, hy + eyeCam.fy, hz + eyeCam.fz);
+      if (!f.landed) camera.rotateZ(Math.sin(st.t * 23) * 0.03 + clamp(angDiff(eyeCam.yawPrev || f.yaw, f.yaw) / Math.max(dt, 1e-3), -3, 3) * -0.05);
+      eyeCam.yawPrev = f.yaw;
+      eyeLook.yaw *= 1 - Math.min(1, dt * (cam.drag ? 0 : 1.5)); eyeLook.pitch *= 1 - Math.min(1, dt * (cam.drag ? 0 : 1.5));
+    } else {
+    camera.up.set(0, 1, 0);
     const dd = macro ? 0.075 : cam.dist + (f.landed ? 0 : 0.5);
     let cx = cam.tgt.x + Math.cos(cam.yaw) * Math.cos(cam.pitch) * dd, cy = cam.tgt.y + Math.sin(cam.pitch) * dd, cz = cam.tgt.z + Math.sin(cam.yaw) * Math.cos(cam.pitch) * dd;
     camera.position.set(clamp(cx, -2.92, 2.92), clamp(cy, 0.03, 2.64), clamp(cz, -2.42, 2.42)); camera.lookAt(cam.tgt.x, cam.tgt.y, cam.tgt.z);
+    }
     camera.getWorldDirection(_fw); updateListener(); if (buzz) updateBuzz({alive:true, landed:f.landed, v:V(f.v.x * speed, f.v.y * speed, f.v.z * speed), p:f.p});
     for (const c of crumbs) c.m.visible = true;
     if ((uiT += dt) > 0.2) {
@@ -3296,7 +3359,7 @@ const OBS = (() => {
     S.cp(cam.tgt, f.p); st.t = 0; st.steps = st.flights = st.groom = 0; st.dist = st.eat = 0; slowFly = 0;
     renderSpeed();
   }
-  function show(on) { obj.visible = on; $('#obsUI').hidden = !on; for (const c of crumbs) c.m.visible = on; if (!on) prob.visible = false; }
+  function show(on) { if (!on && eyes) setEyes(false); obj.visible = on; $('#obsUI').hidden = !on; for (const c of crumbs) c.m.visible = on; if (!on) prob.visible = false; }
   function renderSpeed() {
     const el = $('#oSpeed'); el.innerHTML = '';
     for (const [v, t] of [[0.25, '×0.25'], [1, '×1'], [3, '×3']]) { const b = document.createElement('button'); b.textContent = t; b.classList.toggle('on', speed === v); b.onclick = () => { speed = v; renderSpeed(); }; el.appendChild(b); }
@@ -3306,22 +3369,25 @@ const OBS = (() => {
     const p = V(s.c.x + rnd(-s.hu, s.hu) * 0.7, s.c.y + 0.004, s.c.z + rnd(-s.hv, s.hv) * 0.7);
     const m = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.008, 0.012), new THREE.MeshStandardMaterial({color:0xffffff, roughness:0.9})); m.position.set(p.x, p.y, p.z); m.rotation.y = rnd(3); m.castShadow = true; scene.add(m);
     crumbs.push({m, food:{p, r:0.04, type:'sugar'}}); if (crumbs.length > 6) scene.remove(crumbs.shift().m);
-    f.energy = Math.min(f.energy, 0.4); if (f.landed && f.act !== 'eat') chooseLanded();
+    f.lure = crumbs[crumbs.length - 1].food;   /* сытость не трогаем: муха просто замечает сахар и летит к нему */
+    if (f.energy < 0.95) { if (f.landed && f.act !== 'eat') { if (foodHere() === f.lure) chooseLanded(); else { takeoff(); f.flyMax = 0.4; } } else if (!f.landed) { f.flyMax = Math.min(f.flyMax, f.flyT + 0.3); f.target = null; } }
     ACH.give('feed'); sfx('step', p, 0.3);
   }
   function scare() { sfx('slap', null, 0.6); if (f.landed) takeoff(true); else { f.spd = 3.5; f.flyT = 0; f.target = null; f.yaw += Math.PI; setAct('scared', 0.6); } }
   function mouse(e) {
     if (e.type === 'mousedown') { cam.drag = true; cam.lx = e.clientX; cam.ly = e.clientY; cam.idle = 0; }
     else if (e.type === 'mouseup') cam.drag = false;
+    else if (e.type === 'mousemove' && cam.drag && eyes) { eyeLook.yaw = clamp(eyeLook.yaw + (e.clientX - cam.lx) * 0.005, -1.6, 1.6); eyeLook.pitch = clamp(eyeLook.pitch + (e.clientY - cam.ly) * 0.004, -1, 1); cam.lx = e.clientX; cam.ly = e.clientY; }
     else if (e.type === 'mousemove' && cam.drag) { cam.yaw += (e.clientX - cam.lx) * 0.006; cam.pitch = clamp(cam.pitch + (e.clientY - cam.ly) * 0.005, -1.2, 1.4); cam.lx = e.clientX; cam.ly = e.clientY; cam.idle = 0; }
   }
-  function wheel(e) { macro = false; cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.0012), 0.08, 3); cam.idle = 0; }
+  function wheel(e) { if (eyes) return; macro = false; cam.dist = clamp(cam.dist * Math.exp(e.deltaY * 0.0012), 0.08, 3); cam.idle = 0; }
   /* пальцем на телефоне */
   let tp = null;
   $('#cv').addEventListener('pointerdown', e => { if (G.mode === 'obs' && e.pointerType !== 'mouse') { tp = {x:e.clientX, y:e.clientY}; cam.idle = 0; } });
-  addEventListener('pointermove', e => { if (G.mode === 'obs' && tp && e.pointerType !== 'mouse') { cam.yaw += (e.clientX - tp.x) * 0.008; cam.pitch = clamp(cam.pitch + (e.clientY - tp.y) * 0.006, -1.2, 1.4); tp = {x:e.clientX, y:e.clientY}; } });
-  addEventListener('pointerup', () => { tp = null; });
-  $('#oFeed').onclick = feed; $('#oScare').onclick = scare; $('#oMacro').onclick = () => { macro = !macro; $('#oMacro').classList.toggle('pri', macro); }; $('#oBack').onclick = () => setMode('menu');
+  addEventListener('pointermove', e => { if (G.mode === 'obs' && tp && e.pointerType !== 'mouse' && eyes) { eyeLook.yaw = clamp(eyeLook.yaw + (e.clientX - tp.x) * 0.006, -1.6, 1.6); eyeLook.pitch = clamp(eyeLook.pitch + (e.clientY - tp.y) * 0.005, -1, 1); tp = {x:e.clientX, y:e.clientY}; cam.drag = true; return; } if (G.mode === 'obs' && tp && e.pointerType !== 'mouse') { cam.yaw += (e.clientX - tp.x) * 0.008; cam.pitch = clamp(cam.pitch + (e.clientY - tp.y) * 0.006, -1.2, 1.4); tp = {x:e.clientX, y:e.clientY}; } });
+  addEventListener('pointerup', e => { tp = null; if (e.pointerType !== 'mouse') cam.drag = false; });
+  $('#oFeed').onclick = feed; $('#oScare').onclick = scare; $('#oEyes').onclick = () => setEyes(!eyes);
+  $('#oMacro').onclick = () => { if (eyes) setEyes(false); macro = !macro; $('#oMacro').classList.toggle('pri', macro); }; $('#oBack').onclick = () => setMode('menu');
   $('#mObs').onclick = open;
   return {open, frame, show, mouse, wheel, f};
 })();
@@ -4298,7 +4364,7 @@ const SB = (() => {
 
 applyLocation(store.settings.loc); tuneEnv(scene); renderLocs();
 renderWbar(); setMode('menu'); requestAnimationFrame(frame);
-window.FLY3D = {S, G, LB, store, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
+window.FLY3D = {S, G, LB, store, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, EYE, tickHunt, drawHunt, composer, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
   snap(w, h) { const ow = innerWidth, oh = innerHeight; renderer.setSize(w, h, false); composer.setSize(w, h); gtao.setSize(w, h); bloom.resolution.set(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); draw(); const url = renderer.domElement.toDataURL('image/jpeg', 0.88); resize(); return url; },
   step(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) tickHunt(); },
   stepV(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) { tickHunt(); drawHunt(DT); } },   /* то же, но с отрисовкой — работает зрение мухи */
