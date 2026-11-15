@@ -307,7 +307,7 @@ h1 em{font-style:normal;color:var(--acc)}
     <div class="modes">
       <button class="mode" id="mObs"><b>Наблюдение</b></button>
       <button class="mode" id="mSb"><b>Песочница</b></button>
-      <button class="mode" id="mWs"><b>Мастерская</b></button>
+      <button class="mode" id="mGf"><b>Геометри Муха</b></button>
     </div>
     </div>
     <button class="mi" data-s="modeDev">Помощь разработчику<u>›</u></button>
@@ -2763,9 +2763,9 @@ function setMode(m) {
   const isDev = m === 'play' && G.lv && G.lv.key === 'dev';
   $('#brainBox').hidden = !(store.settings.brain || isDev); $('#brainBox').classList.toggle('dev', !!isDev); BPOS = null;
   if (m !== 'lab') hideLabObjs(); else { labBodies.visible = labWings.visible = true; }
-  OBS.show(m === 'obs'); SB.show(m === 'sb'); if (typeof WS !== 'undefined') WS.show(m === 'ws'); if (typeof LOBBY !== 'undefined') LOBBY.show(m === 'menu'); $('#achScr').hidden = true; if (m !== 'play') flyBlob.visible = false;
+  OBS.show(m === 'obs'); SB.show(m === 'sb'); if (typeof GF !== 'undefined') GF.show(m === 'gf'); if (typeof LOBBY !== 'undefined') LOBBY.show(m === 'menu'); $('#achScr').hidden = true; if (m !== 'play') flyBlob.visible = false;
   if (m !== 'play') { $('#win').hidden = true; $('#meme').hidden = true; }
-  flyObj.visible = m !== 'lab' && m !== 'obs' && m !== 'sb' && m !== 'ws'; for (const id of WPN) wModels[id].visible = false; if (m !== 'play') { hideProj(); G.spin = 0; }
+  flyObj.visible = m !== 'lab' && m !== 'obs' && m !== 'sb' && m !== 'gf'; for (const id of WPN) wModels[id].visible = false; if (m !== 'play') { hideProj(); G.spin = 0; }
   if (m === 'menu') { renderLevels(); renderDev(); initMenuWorld(); }
   if (m !== 'play' && buzz) buzz.g.gain.setTargetAtTime(0, AC.currentTime, 0.05);
   if (hiss) hiss.gain.setTargetAtTime(0, AC.currentTime, 0.05); if (hum) hum.gain.setTargetAtTime(0, AC.currentTime, 0.05);
@@ -2802,7 +2802,7 @@ addEventListener('keydown', e => {
   }
   if (G.mode === 'obs') { if (e.code === 'Escape') setMode('menu'); return; }
   if (G.mode === 'sb') return SB.key(e);
-  if (G.mode === 'ws') return WS.key(e);
+  if (G.mode === 'gf') return GF.key(e);
   if (G.mode === 'play') {
     if (/^Digit[1-7]$/.test(e.code)) { const A = availW(), id = A[+e.code.slice(5) - 1]; if (id) setWeapon(id); }
     else if (e.code === 'KeyB') { store.settings.brain = !store.settings.brain; $('#brainBox').hidden = !store.settings.brain; $('#oBrain').checked = store.settings.brain; saveStore(); }
@@ -2891,8 +2891,8 @@ function frame(now) {
     OBS.frame(dt); ring.visible = false;
   } else if (G.mode === 'sb') {
     SB.frame(dt); ring.visible = false;
-  } else if (G.mode === 'ws') {
-    WS.frame(dt); ring.visible = false;
+  } else if (G.mode === 'gf') {
+    GF.frame(dt); ring.visible = false;
   } else if (G.mode === 'lab') {
     labFrame(dt); drawLab();
     menuT += dt * 0.05; camera.position.set(0.9 + Math.sin(menuT) * 1.7, 2.5, 0.2 + Math.cos(menuT) * 1.9); camera.lookAt(-0.4, 0.5, -0.6);
@@ -2900,7 +2900,7 @@ function frame(now) {
   } else {
     LOBBY.frame(dt); ring.visible = false;
   }
-  if (G.mode === 'menu') LOBBY.render(); else if (G.mode !== 'sb' && G.mode !== 'ws') draw();
+  if (G.mode === 'menu') LOBBY.render(); else if (G.mode !== 'sb' && G.mode !== 'gf') draw();
 }
 /* ===== ЗРЕНИЕ МУХИ: два глаза по 110°, ч/б, 40×20 «фасеток» на глаз, 20 раз в секунду =====
    Из картинки считаем, сколько её внезапно потемнело (растущая тень — LPLC2/LC4) и сколько движется,
@@ -5674,347 +5674,627 @@ const SB = (() => {
   return {show, frame, mouse, wheel, key, W, EXP, step, apply, quick, clearAll, runEvent, logs, setTool, cam, P, genWorld, render, strike, setWeather, tile, owner, spawnPred, meteorHit, s2w, wx2s, wy2s};
 })();
 
-/* ================= МАСТЕРСКАЯ: создай муху, построй арену, задай правила и обучи ================= */
-const WS = (() => {
-  const AW = 32, AH = 20, DTW = 1 / 30, POP = 20, EP_T = 25;
-  /* каналы чувств: от чего муха может «чуять» направление */
-  const CH = ['sugar', 'poison', 'ball', 'basket', 'zoneA', 'zoneB', 'threat', 'wall'];
-  const NC = CH.length, NEX = NC * 2 + 2;
-  const ENTS = {sugar:'Сахар', poison:'Яд', ball:'Мячик', basket:'Корзина', slipper:'Тапок', fan:'Вентилятор'};
-  const EVENTS = {eat:'съела сахар', poison:'тронула яд', grab:'взяла мячик', bring:'принесла мячик в корзину', hit:'попала под тапок', wall:'врезалась в стену', zoneA:'в синей зоне (за секунду)', zoneB:'в розовой зоне (за секунду)', move:'бегает (за секунду)', still:'стоит на месте (за секунду)'};
-  const COLORS = [['#4d473f', 'Серая'], ['#f2cf5a', 'Золотая'], ['#6a9a40', 'Зелёная'], ['#4a7ad8', 'Синяя'], ['#d84a4a', 'Красная'], ['#9a5ad8', 'Фиолетовая']];
-  const GENES = [['smell', 'Нюх'], ['loom', 'Зрение'], ['wind', 'Чувство ветра'], ['lr', 'Обучаемость'], ['jump', 'Смелость'], ['fwd', 'Скорость']];
-  const pick = a => a[Math.floor(Math.random() * a.length)];
-  let D = null; const dims = () => D || (D = S.dims());
-  const shade = (h, k) => { const n = parseInt(h.slice(1), 16), f = c => clamp(Math.round(c * k), 0, 255); return `rgb(${f(n >> 16)},${f(n >> 8 & 255)},${f(n & 255)})`; };
+/* ===== Геометри Муха: раннер, редактор уровней, Муха-ас ===== */
+const GF = (() => {
+  const DT = 1 / 240, SUB = 4, CEIL = 12, CAP = 300;
+  const SPD = [8.4, 10.4, 12.9, 15.6];
+  const PH = {g:86, jv:20.5, pad:27, orb:19, fa:64, fv:10.5, tv:30};
+  const HS = [0.4, 0.36, 0.2], DH = [0.27, 0.24, 0.13];
+  const BLOCK = 1, SPIKE = 2, SAW = 3, PAD = 4, ORB = 5, P_HOP = 6, P_FLY = 7, P_WAVE = 8, G_DN = 9, G_UP = 10, SP0 = 11;
+  const MODE_N = ['прыжки', 'полёт', 'волна'];
+  const BUILTIN = /*GF_LEVELS*/null;
 
-  /* ---------- работа: арена + правила + муха ---------- */
-  function blankWork() {
-    const t = new Array(AW * AH).fill(0); for (let x = 0; x < AW; x++) { t[x] = 1; t[(AH - 1) * AW + x] = 1; } for (let y = 0; y < AH; y++) { t[y * AW] = 1; t[y * AW + AW - 1] = 1; }
-    return {name:'Моя работа', tiles:t, ents:[{k:'sugar', x:24, y:10}], start:{x:6, y:10}, rules:[{ev:'eat', v:2}], fly:{name:'Жужа', col:0}, champ:null, gen:0, hist:[]};
-  }
-  function newGenome() { const g0 = S.randomGenome(), d = dims(), g = new Float32Array(d.GL + NEX); g.set(g0.subarray(0, d.GL)); for (let k = d.GL; k < g.length; k++) g[k] = gauss() * 0.3; g[d.GL + NC * 2 + 1] = 0.3; return g; }
-  let WK = blankWork();
-  /* ---------- состояние ---------- */
-  const st = {open:false, tab:'fly', tool:'wall', live:null, run:true, speed:1, painting:false, lastCell:-1, msg:'', msgT:0, ui:null, cv:null, ctx:null, cs:20, ox:0, oy:0, sprites:{}};
-
-  /* ---------- спрайт мухи ---------- */
-  const ROWS = [['...........', '....l.l.l..', '..WW..l....', '.WWBWtte...', 'bbBbBttee..', '.WWBWtte...', '..WW..l....', '....l.l.l..', '...........'],
-    ['..WW.......', '..WWW.l.l..', '...WW.l....', '..bBbtte...', 'bbBbBttee..', '..bBbtte...', '...WW.l....', '..WWW.l.l..', '..WW.......']];
-  function flySprite(ci, fr) { const key = ci + '_' + fr; if (st.sprites[key]) return st.sprites[key];
-    const c0 = COLORS[ci] ? COLORS[ci][0] : COLORS[0][0], pal = {b:shade(c0, 0.6), B:c0, t:shade(c0, 1.35), e:'#c4291c', l:'#17140f', W:'rgba(206,222,242,.85)'}, rows = ROWS[fr];
-    const c = document.createElement('canvas'); c.width = 11; c.height = 9; const g = c.getContext('2d');
-    for (let y = 0; y < 9; y++) for (let x = 0; x < 11; x++) { const ch = rows[y][x]; if (ch !== '.') { g.fillStyle = pal[ch]; g.fillRect(x, y, 1, 1); } }
-    return st.sprites[key] = c; }
-
-  /* ---------- арена ---------- */
-  const T = (x, y) => (x < 0 || y < 0 || x >= AW || y >= AH) ? 1 : WK.tiles[(y | 0) * AW + (x | 0)];
-  const isWallAt = (x, y) => T(x, y) === 1;
-
-  /* ---------- одна муха в арене ---------- */
-  function makeFly(g, learn) {
-    const d = dims(), br = new S.Brain(g), ex = Float32Array.from(g.subarray(d.GL, d.GL + NEX));
-    const ents = WK.ents.map(e => ({...e, x:e.x + 0.5, y:e.y + 0.5, hx:e.x + 0.5, hy:e.y + 0.5, off:0, ph:Math.random() * 4, carried:false}));
-    return {g, br, ex, learn, x:WK.start.x + 0.5, y:WK.start.y + 0.5, h:R(0, TAU), v:0, carry:null, score:0, t:0, bT:0, ents, cd:{}, el:new Float32Array(NEX), noise:0, noiseT:0, dop:0, pain:0, turnB:0, fwdB:0, wing:0, log:[], stat:{}, jump:0};
-  }
-  function sense(f) {
-    const L = new Float32Array(NC), Rr = new Float32Array(NC);
-    const add = (c, x, y, k) => { const dx = x - f.x, dy = y - f.y, d = Math.hypot(dx, dy); if (d > 14) return; const s = k * Math.exp(-d / 5), side = Math.sin(angDiff(f.h, Math.atan2(dy, dx)));
-      L[c] += s * clamp(0.6 - side, 0, 1.2); Rr[c] += s * clamp(0.6 + side, 0, 1.2); };
-    for (const e of f.ents) {
-      if (e.k === 'sugar' && e.off <= 0) add(0, e.x, e.y, 1);
-      else if (e.k === 'poison') add(1, e.x, e.y, 1);
-      else if (e.k === 'ball' && !e.carried) add(2, e.x, e.y, 1);
-      else if (e.k === 'basket') add(3, e.x, e.y, f.carry ? 1.4 : 0.5);
-      else if (e.k === 'slipper') { const warn = e.ph > 3 && e.ph < 3.8; if (warn) add(6, e.x, e.y, 2); }
+  /* ---------- подготовка уровня ---------- */
+  function prep(L, open) {
+    const P = {L, cols:[], portals:[], blocks:[], hz:[], tr:[], len:0};
+    const col = c => P.cols[c] || (P.cols[c] = {b:[], h:[], t:[]});
+    let maxX = 10, ti = 0;
+    for (const o of L.o) add(P, o);
+    function add(P, o) {
+      const t = o[0], x = o[1], y = o[2];
+      if (t === BLOCK) {
+        const b = {x, y, w:o[3] || 1, h:o[4] || 1}; P.blocks.push(b);
+        for (let c = Math.floor(x); c < Math.ceil(x + b.w); c++) col(c).b.push(b);
+        maxX = Math.max(maxX, x + b.w);
+      } else if (t === SPIKE) {
+        const r = o[3] || 0, h = {k:0, ox:x, oy:y, rot:r, x0:x + .3, x1:x + .7, y0:r ? y + .42 : y, y1:r ? y + 1 : y + .58};
+        P.hz.push(h); col(Math.floor(x)).h.push(h); maxX = Math.max(maxX, x + 1);
+      } else if (t === SAW) {
+        const s = o[3] || 1, h = {k:1, ox:x, oy:y, s, cx:x + s / 2, cy:y + s / 2, r:.42 * s};
+        P.hz.push(h); for (let c = Math.floor(h.cx - h.r); c <= Math.floor(h.cx + h.r); c++) col(c).h.push(h); maxX = Math.max(maxX, x + s);
+      } else if (t === PAD || t === ORB) {
+        const g = {k:t, i:ti++, x, y, cx:x + .5, cy:y + .5}; P.tr.push(g);
+        col(Math.floor(x)).t.push(g); if (t === ORB) { col(Math.floor(x) - 1).t.push(g); col(Math.floor(x) + 1).t.push(g); }
+        maxX = Math.max(maxX, x + 1);
+      } else if (t >= P_HOP && t <= SP0 + 3) { P.portals.push({t, x, y}); maxX = Math.max(maxX, x + 1); }
     }
-    /* зоны: ближайшая клетка зоны впереди-слева и впереди-справа */
-    for (const [c, z] of [[4, 2], [5, 3]]) for (let r = 1; r <= 6; r += 1.5) for (const s of [-1, 1]) { const a = f.h + s * 0.6, x = f.x + Math.cos(a) * r, y = f.y + Math.sin(a) * r; if (T(x, y) === z) (s < 0 ? L : Rr)[c] += 0.35 / r; }
-    for (const s of [-1, 1]) for (let r = 0.5; r <= 3; r += 0.5) { const a = f.h + s * 0.5; if (isWallAt(f.x + Math.cos(a) * r, f.y + Math.sin(a) * r)) { (s < 0 ? L : Rr)[7] += (3.5 - r) / 3; break; } }
-    return [L, Rr];
+    P.portals.sort((a, b) => a.x - b.x);
+    P.add = o => { L.o.push(o); add(P, o); if (o[0] >= P_HOP) P.portals.sort((a, b) => a.x - b.x); };
+    P.len = open ? Infinity : (L.end || Math.ceil(maxX) + 10);
+    return P;
   }
-  function event(f, ev, k = 1) {
-    let r = 0; for (const ru of WK.rules) if (ru.ev === ev) r += ru.v * k;
-    f.stat[ev] = (f.stat[ev] || 0) + k;
-    if (r) { f.score += r; reinforce(f, r * (ev === 'zoneA' || ev === 'zoneB' || ev === 'move' || ev === 'still' ? 0.3 : 1)); }
-    return r;
+
+  /* ---------- физика ---------- */
+  function newP(L) { const m = L.m || 0; return {x:0, y:HS[m], vy:0, m, gs:1, sp:L.sp == null ? 1 : L.sp, gr:true, oi:-1, pi:0, dead:false, win:false, t:0}; }
+  function portal(p, t) {
+    if (t === P_HOP) { if (p.m !== 0) { p.m = 0; p.vy *= .5; } }
+    else if (t === P_FLY) { if (p.m !== 1) { p.m = 1; p.vy *= .5; } }
+    else if (t === P_WAVE) p.m = 2;
+    else if (t === G_DN) { if (p.gs < 0) { p.gs = 1; p.vy *= .5; p.gr = false; } }
+    else if (t === G_UP) { if (p.gs > 0) { p.gs = -1; p.vy *= .5; p.gr = false; } }
+    else if (t >= SP0) p.sp = t - SP0;
   }
-  /* обучение при жизни: мозг (дофамин/боль) + рулевые связи по следу активности */
-  function reinforce(f, r) {
-    f.br.reinforce(clamp(r, -3, 3) * 0.02); if (r > 0) f.dop = Math.min(1.5, f.dop + r * 0.3); else f.pain = Math.min(1.5, f.pain - r * 0.3);
-    if (!f.learn) return; const eta = 0.08 * (0.3 + f.br.lr * 4);
-    for (let k = 0; k < NEX; k++) f.ex[k] = clamp(f.ex[k] + eta * clamp(r, -3, 3) * f.el[k], -4, 4);
-  }
-  function stepFly(f, dt) {
-    f.t += dt; const b = f.br;
-    const [L, Rr] = sense(f);
-    f.bT += dt;
-    if (f.bT >= 0.1) { const I = b.inp; I.fill(0); I[0] = L[6] * b.kLoom; I[1] = Rr[6] * b.kLoom; I[2] = L[0] * b.kSmell; I[3] = Rr[0] * b.kSmell;
-      for (const e of f.ents) if (e.k === 'fan') { const d = Math.hypot(e.x - f.x, e.y - f.y); if (d < 5) { I[6] = I[7] = (5 - d) / 5 * b.kWind; } }
-      I[8] = f.dop * 1.5; I[9] = f.pain * 1.5; b.step(true); f.dop *= 0.85; f.pain *= 0.85; f.bT = 0;
-      f.bTurn = (b.mean(dims().OUTN.turnR) - b.mean(dims().OUTN.turnL)) * b.kTurn; f.bFwd = (b.mean(dims().OUTN.fwd) - b.mean(dims().OUTN.back)) * b.kFwd;
-      const jump = Math.max(b.mean(dims().OUTN.jumpL), b.mean(dims().OUTN.jumpR)); f.jd = jump - (f.jb || 0); f.jb = (f.jb || 0) + (jump - (f.jb || 0)) * 0.5; }
-    /* исследование: шум в повороте и скорости, след для обучения */
-    if ((f.noiseT -= dt) <= 0) { f.noiseT = R(0.2, 0.6); f.noise = gauss() * 0.8; f.noiseF = gauss() * 0.3; }
-    const ex = f.ex; let turn = ex[NC * 2] + f.noise * 0.6 + (f.bTurn || 0) * 0.15, fwd = 0.35 + ex[NC * 2 + 1] + (f.noiseF || 0) * 0.5 + (f.bFwd || 0) * 0.1;
-    for (let c = 0; c < NC; c++) { const df = Rr[c] - L[c], sm = L[c] + Rr[c]; turn += ex[c] * df * 3; fwd += ex[NC + c] * sm; }
-    const decay = Math.exp(-dt / 1.5);
-    for (let c = 0; c < NC; c++) { f.el[c] = f.el[c] * decay + (Rr[c] - L[c]) * f.noise * dt; f.el[NC + c] = f.el[NC + c] * decay + (L[c] + Rr[c]) * (f.noiseF || 0) * dt; }
-    f.el[NC * 2] = f.el[NC * 2] * decay + f.noise * dt; f.el[NC * 2 + 1] = f.el[NC * 2 + 1] * decay + (f.noiseF || 0) * dt;
-    fwd = clamp(fwd, 0, 1);
-    if (f.jd > b.thJump && L[6] + Rr[6] > 0.3) { f.h += (L[6] > Rr[6] ? 1 : -1) * 1.2; fwd = 1.6; f.jd = 0; }   /* прыжок прочь от тени */
-    f.h += clamp(turn, -3, 3) * 2.2 * dt;
-    let sp = (0.4 + 4 * fwd) * dt;
-    for (const e of f.ents) if (e.k === 'fan') { const d = Math.hypot(e.x - f.x, e.y - f.y); if (d < 5 && d > 0.1) { f.x += (f.x - e.x) / d * (5 - d) * 0.25 * dt; f.y += (f.y - e.y) / d * (5 - d) * 0.25 * dt; } }
-    const nx = f.x + Math.cos(f.h) * sp, ny = f.y + Math.sin(f.h) * sp;
-    if (isWallAt(nx, ny)) { if ((f.cd.wall || 0) <= f.t) { f.cd.wall = f.t + 0.6; event(f, 'wall'); } f.h += Math.PI * R(0.5, 1.2); sp = 0; }
-    else { f.x = nx; f.y = ny; }
-    if (isWallAt(f.x, f.y)) { f.x = WK.start.x + 0.5; f.y = WK.start.y + 0.5; }
-    f.v = sp / dt; f.wing += dt * (f.v > 1 ? 30 : 0);
-    /* события */
-    const tz = T(f.x, f.y); if (tz === 2) event(f, 'zoneA', dt); else if (tz === 3) event(f, 'zoneB', dt);
-    if (f.v > 2) event(f, 'move', dt); else if (f.v < 0.6) event(f, 'still', dt);
-    for (const e of f.ents) {
-      const d = Math.hypot(e.x - f.x, e.y - f.y);
-      if (e.k === 'sugar') { if (e.off > 0) e.off -= dt; else if (d < 0.7) { e.off = 4; event(f, 'eat'); } }
-      else if (e.k === 'poison') { if (d < 0.7 && (f.cd.p || 0) <= f.t) { f.cd.p = f.t + 1.5; event(f, 'poison'); } }
-      else if (e.k === 'ball') { if (e.carried) { e.x = f.x + Math.cos(f.h) * 0.45; e.y = f.y + Math.sin(f.h) * 0.45; } else if (!f.carry && d < 0.6) { e.carried = true; f.carry = e; event(f, 'grab'); } }
-      else if (e.k === 'slipper') { e.ph += dt; if (e.ph >= 4) { e.ph = 0; if (d < 1.6) event(f, 'hit'); e.hitT = 0.25; } if (e.hitT > 0) e.hitT -= dt; }
+  function step(p, hold, P) {
+    const v = SPD[p.sp]; p.x += v * DT; p.t++;
+    const pr = P.portals; while (p.pi < pr.length && pr[p.pi].x + .5 <= p.x) { portal(p, pr[p.pi].t); p.pi++; }
+    const m = p.m, hs = HS[m];
+    if (m === 0) { if (hold && p.gr) { p.vy = PH.jv * p.gs; p.gr = false; } p.vy -= PH.g * p.gs * DT; }
+    else if (m === 1) { p.vy += (hold ? PH.fa : -PH.fa * .85) * p.gs * DT; if (p.vy > PH.fv) p.vy = PH.fv; else if (p.vy < -PH.fv) p.vy = -PH.fv; }
+    else p.vy = (hold ? v : -v) * p.gs;
+    if (p.vy > PH.tv) p.vy = PH.tv; else if (p.vy < -PH.tv) p.vy = -PH.tv;
+    const oy = p.y; p.y += p.vy * DT; p.gr = false;
+    if (p.y - hs < 0) { p.y = hs; if (p.vy < 0) p.vy = 0; if (p.gs > 0) p.gr = true; }
+    if (p.y + hs > CEIL) { p.y = CEIL - hs; if (p.vy > 0) p.vy = 0; if (p.gs < 0) p.gr = true; }
+    const c0 = Math.floor(p.x - hs), c1 = Math.floor(p.x + hs), cols = P.cols;
+    for (let c = c0; c <= c1; c++) {
+      const C = cols[c]; if (!C) continue;
+      for (const b of C.b) {
+        if (p.x + hs <= b.x || p.x - hs >= b.x + b.w || p.y + hs <= b.y || p.y - hs >= b.y + b.h) continue;
+        const top = b.y + b.h;
+        if (oy - hs >= top - .12 && (m || p.gs > 0)) { p.y = top + hs; if (p.vy < 0) p.vy = 0; if (p.gs > 0) p.gr = true; }
+        else if (oy + hs <= b.y + .12 && (m || p.gs < 0)) { p.y = b.y - hs; if (p.vy > 0) p.vy = 0; if (p.gs < 0) p.gr = true; }
+        else { p.dead = true; return; }
+      }
     }
-    if (f.carry) for (const e of f.ents) if (e.k === 'basket' && Math.hypot(e.x - f.carry.x, e.y - f.carry.y) < 0.9) { const bl = f.carry; bl.carried = false; bl.x = bl.hx; bl.y = bl.hy; f.carry = null; event(f, 'bring'); break; }
-  }
-
-  /* ---------- эволюция: копии мухи соревнуются по правилам ---------- */
-  function champ() { if (!WK.champ) WK.champ = newGenome(); return WK.champ; }
-  function mutateG(g) { const d = dims(), c = g.slice(); S.mutate(c.subarray(0, d.GL), 0.4); for (let k = d.GL; k < c.length; k++) if (Math.random() < 0.4) c[k] = clamp(c[k] + gauss() * 0.35, -4, 4); return c; }
-  function evalG(g) { const f = makeFly(g, true); for (let t = 0; t < EP_T; t += DTW) stepFly(f, DTW); return f; }
-  let pop = null;
-  function generations(n) {
-    const t0 = performance.now(); let done = 0;
-    if (!pop) { const c = champ(); pop = [c.slice()]; while (pop.length < POP) pop.push(mutateG(c)); }
-    for (; done < n && performance.now() - t0 < 4500; done++) {
-      const res = pop.map(g => ({g, f:evalG(g)})).sort((a, b) => b.f.score - a.f.score);
-      const best = res[0]; WK.gen++; WK.hist.push({b:best.f.score, a:res.reduce((s, r) => s + r.f.score, 0) / res.length}); if (WK.hist.length > 300) WK.hist.shift();
-      /* чемпион передаёт выученное при жизни как стартовые связи */
-      const g = best.g.slice(), d = dims(); g.set(best.f.ex, d.GL); WK.champ = g; WK.best = best.f.score; WK.bestStat = best.f.stat;
-      const top = res.slice(0, POP / 4).map(r => r.g); pop = [g.slice()]; while (pop.length < POP) pop.push(mutateG(pick(top)));
+    const dh = DH[m];
+    for (let c = c0; c <= c1; c++) {
+      const C = cols[c]; if (!C) continue;
+      for (const h of C.h) {
+        if (h.k === 0) { if (p.x + dh > h.x0 && p.x - dh < h.x1 && p.y + dh > h.y0 && p.y - dh < h.y1) { p.dead = true; return; } }
+        else { const nx = Math.max(p.x - dh, Math.min(h.cx, p.x + dh)) - h.cx, ny = Math.max(p.y - dh, Math.min(h.cy, p.y + dh)) - h.cy; if (nx * nx + ny * ny < h.r * h.r) { p.dead = true; return; } }
+      }
+      if (m === 0) for (const g of C.t) {
+        if (g.i === p.oi) continue;
+        if (g.k === PAD) { if (p.x + hs > g.x && p.x - hs < g.x + 1 && p.y - hs < g.y + .35 && p.y + hs > g.y) { p.vy = PH.pad * p.gs; p.gr = false; p.oi = g.i; } }
+        else if (hold && Math.abs(p.x - g.cx) < .85 && Math.abs(p.y - g.cy) < .85) { p.vy = PH.orb * p.gs; p.gr = false; p.oi = g.i; }
+      }
     }
-    if (st.live) restartLive(); return done;
+    if (p.x >= P.len) p.win = true;
   }
 
-  /* ---------- живая муха ---------- */
-  function restartLive() { st.live = makeFly(champ().slice(), true); }
-  function praise(v) { if (!st.live) restartLive(); reinforce(st.live, v * 2); st.live.score += 0; flash(v > 0 ? 'Похвалили!' : 'Поругали!'); sfx(v > 0 ? 'ding' : 'slap', null, 0.3); }
-  function keepLearned() { if (!st.live) return; const g = st.live.g.slice(), d = dims(); g.set(st.live.ex, d.GL); WK.champ = g; pop = null; flash('Выученное сохранено в мухе'); }
-
-  /* ---------- сохранение работ ---------- */
-  const b64 = a => { const u = new Uint8Array(a.buffer, a.byteOffset, a.byteLength); let s = ''; for (let i = 0; i < u.length; i += 8192) s += String.fromCharCode.apply(null, u.subarray(i, i + 8192)); return btoa(s); };
-  const unb64 = s => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new Float32Array(u.buffer); };
-  function pack(w) { return {v:1, name:w.name, tiles:w.tiles.join(''), ents:w.ents, start:w.start, rules:w.rules, fly:w.fly, champ:w.champ ? b64(w.champ) : null, gen:w.gen, hist:w.hist.slice(-120), best:w.best || 0}; }
-  function unpack(o) {
-    if (!o || !o.tiles || o.tiles.length !== AW * AH) throw new Error('bad');
-    const w = {name:String(o.name || 'Работа').slice(0, 40), tiles:[...o.tiles].map(Number), ents:(o.ents || []).filter(e => ENTS[e.k]).map(e => ({k:e.k, x:clamp(e.x | 0, 0, AW - 1), y:clamp(e.y | 0, 0, AH - 1)})), start:o.start || {x:2, y:2},
-      rules:(o.rules || []).filter(r => EVENTS[r.ev]).map(r => ({ev:r.ev, v:clamp(+r.v || 0, -5, 5)})), fly:{name:String((o.fly && o.fly.name) || 'Жужа').slice(0, 20), col:clamp((o.fly && o.fly.col) | 0, 0, COLORS.length - 1)}, champ:null, gen:o.gen | 0, hist:o.hist || [], best:o.best || 0};
-    if (o.champ) { const g = unb64(o.champ); if (g.length === dims().GL + NEX) w.champ = g; }
-    return w;
+  /* ---------- Муха-ас: перебор всех вариантов нажатий ---------- */
+  const keyOf = p => ((Math.round(p.y * 40) * 201 + Math.round(p.vy * 3) + 100) * 2 + (p.gr ? 1 : 0)) * 1024 + ((p.oi + 1) & 1023);
+  function solveStep(P, front) {
+    const next = [], seen = new Set();
+    for (let i = 0; i < front.length; i++) {
+      for (let h = 0; h < 2; h++) {
+        const q = Object.assign({}, front[i].p);
+        for (let s = 0; s < SUB && !q.dead && !q.win; s++) step(q, h, P);
+        if (q.dead) continue;
+        const k = keyOf(q); if (seen.has(k)) continue; seen.add(k);
+        next.push({p:q, par:i, h});
+      }
+    }
+    if (next.length > CAP) {
+      next.sort((a, b) => a.p.y - b.p.y || a.p.vy - b.p.vy);
+      const out = [], k = next.length / CAP; for (let i = 0; i < CAP; i++) out.push(next[Math.floor(i * k)]); return out;
+    }
+    return next;
   }
-  const LKEY = 'flyWorks1';
-  function loadList() { try { return JSON.parse(localStorage.getItem(LKEY)) || []; } catch (e) { return []; } }
-  function saveList(L) { try { localStorage.setItem(LKEY, JSON.stringify(L)); return true; } catch (e) { flash('Не хватило места для сохранения'); return false; } }
-  function saveWork() { const L = loadList(), p = pack(WK), i = L.findIndex(x => x.name === WK.name); if (i >= 0) L[i] = p; else L.unshift(p); if (L.length > 30) L.length = 30; if (saveList(L)) { flash('Работа сохранена'); sfx('ding', null, 0.3); } render(); }
-  function openWork(o) { try { WK = unpack(o); pop = null; restartLive(); flash(`Открыта: ${WK.name}`); render(); } catch (e) { flash('Не получилось открыть работу'); } }
-  const toCode = () => 'FLYW1:' + btoa(unescape(encodeURIComponent(JSON.stringify(pack(WK)))));
-  function fromCode(s) { s = (s || '').trim(); const m = s.indexOf('FLYW1:'); if (m < 0) throw new Error('code'); return JSON.parse(decodeURIComponent(escape(atob(s.slice(m + 6).replace(/\s+/g, ''))))); }
-  function exportFile() { const blob = new Blob([JSON.stringify(pack(WK))], {type:'application/json'}), a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = (WK.name || 'work').replace(/[^\wа-яё -]/gi, '') + '.flywork.json'; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); }
+  function solver(P) {
+    let front = [{p:newP(P.L), par:-1, h:0}]; const layers = [];
+    return {
+      run(ms) {
+        const t0 = performance.now();
+        while (performance.now() - t0 < ms) {
+          const nx = solveStep(P, front);
+          if (!nx.length) return {done:true, ok:false, x:front[0].p.x};
+          layers.push({par:Int32Array.from(nx, s => s.par), h:Uint8Array.from(nx, s => s.h)});
+          const w = nx.findIndex(s => s.p.win);
+          if (w >= 0) { const inp = new Uint8Array(layers.length); let idx = w; for (let l = layers.length - 1; l >= 0; l--) { inp[l] = layers[l].h[idx]; idx = layers[l].par[idx]; } return {done:true, ok:true, inputs:inp}; }
+          front = nx;
+        }
+        return {done:false, prog:Math.min(.99, front[0].p.x / P.len)};
+      }
+    };
+  }
+  const rle = a => { let s = '', i = 0; while (i < a.length) { let j = i; while (j < a.length && a[j] === a[i] && j - i < 4000) j++; s += (a[i] ? 'h' : 'r') + (j - i).toString(36) + '.'; i = j; } return s; };
+  const unrle = s => { const out = []; for (const t of s.split('.')) { if (!t) continue; const n = parseInt(t.slice(1), 36), v = t[0] === 'h' ? 1 : 0; for (let i = 0; i < n; i++) out.push(v); } return Uint8Array.from(out); };
 
-  /* ---------- готовые примеры ---------- */
-  function example(kind) {
-    const w = blankWork(); w.ents = []; const set = (x, y, v) => { w.tiles[y * AW + x] = v; };
-    if (kind === 'maze') { w.name = 'Сахар за стенкой'; for (let y = 1; y < 15; y++) set(11, y, 1); for (let y = 5; y < 19; y++) set(21, y, 1); w.ents = [{k:'sugar', x:28, y:3}, {k:'sugar', x:28, y:16}]; w.start = {x:4, y:10}; w.rules = [{ev:'eat', v:3}, {ev:'wall', v:-0.3}]; }
-    if (kind === 'ball') { w.name = 'Принеси мячик'; w.ents = [{k:'ball', x:22, y:6}, {k:'ball', x:24, y:14}, {k:'basket', x:6, y:10}]; w.start = {x:10, y:10}; w.rules = [{ev:'grab', v:1}, {ev:'bring', v:4}]; }
-    if (kind === 'slipper') { w.name = 'Не попадись под тапок'; w.ents = [{k:'sugar', x:16, y:10}, {k:'slipper', x:16, y:10}, {k:'sugar', x:8, y:5}, {k:'sugar', x:24, y:15}, {k:'slipper', x:24, y:15}]; w.start = {x:4, y:4}; w.rules = [{ev:'eat', v:1}, {ev:'hit', v:-3}]; }
-    if (kind === 'zone') { w.name = 'Сиди в синей зоне'; for (let y = 3; y < 9; y++) for (let x = 20; x < 28; x++) set(x, y, 2); for (let y = 12; y < 18; y++) for (let x = 4; x < 12; x++) set(x, y, 3); w.start = {x:4, y:4}; w.rules = [{ev:'zoneA', v:1}, {ev:'zoneB', v:-1}]; }
-    if (kind === 'poison') { w.name = 'Сахар, а не яд'; w.ents = [{k:'sugar', x:8, y:5}, {k:'poison', x:24, y:5}, {k:'poison', x:8, y:15}, {k:'sugar', x:24, y:15}, {k:'fan', x:16, y:10}]; w.start = {x:16, y:3}; w.rules = [{ev:'eat', v:2}, {ev:'poison', v:-3}]; }
-    return w;
+  /* ---------- генератор «демонов» (каждый кусок проверяется решателем) ---------- */
+  function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+  function hopSeg(x, r, sp) {
+    const ri = (a, b) => a + Math.floor(r() * (b - a + 1)), o = [], v = SPD[sp];
+    const k = ri(0, 6);
+    if (k === 0) { const n = ri(1, sp >= 1 ? 3 : 2); for (let i = 0; i < n; i++) o.push([SPIKE, x + 2 + i, 0, 0]); return {o, w:n + 3 + ri(0, 2)}; }
+    if (k === 1) { const h = ri(1, 2), w = ri(1, 3), n = ri(1, 3); o.push([BLOCK, x + 2, 0, w, h]); for (let i = 0; i < n; i++) o.push([SPIKE, x + 2 + w + i, 0, 0]); if (w >= 2 && r() < .5) o.push([SPIKE, x + 2, h, 0]); return {o, w:w + n + 4}; }
+    if (k === 2) { o.push([BLOCK, x + 2, 0, 2, 1], [SPIKE, x + 4, 0, 0], [SPIKE, x + 5, 0, 0], [BLOCK, x + 6, 0, 2, 2], [SPIKE, x + 8, 0, 0], [SPIKE, x + 9, 0, 0], [BLOCK, x + 10, 0, 2, 3]); const n = ri(1, 3); for (let i = 0; i < n; i++) o.push([SPIKE, x + 12 + i, 0, 0]); return {o, w:15 + n}; }
+    if (k === 3) { const n = ri(6, 10); for (let i = 0; i < n; i++) o.push([SPIKE, x + 2 + i, 0, 0]); if (n <= 8) o.push([ORB, x + 2 + Math.floor(n / 2) - 1, ri(1, 3)]); else { o.push([ORB, x + 2 + ri(1, 3), ri(1, 2)], [ORB, x + 2 + n - ri(3, 4), ri(1, 3)]); } return {o, w:n + 4}; }
+    if (k === 4) { const n = ri(4, Math.max(5, Math.floor(.62 * v))); o.push([PAD, x + 2, 0]); for (let i = 0; i < n; i++) o.push([SPIKE, x + 3 + i, 0, 0]); if (r() < .5) o.push([SAW, x + 3 + ri(1, n - 2), ri(5, 6), 1]); return {o, w:n + 5}; }
+    if (k === 5) { const w = ri(5, 8), cy = ri(3, 4); o.push([BLOCK, x + 2, cy, w, 1]); if (cy === 4) for (let i = 0; i < w; i += 2) o.push([SPIKE, x + 2 + i, 3, 1]); const n = ri(1, 2); for (let i = 0; i < n; i++) o.push([SPIKE, x + 2 + ri(1, w - 2), 0, 0]); return {o, w:w + 4}; }
+    const n = ri(9, 15); for (let i = 0; i < n; i++) o.push([SPIKE, x + 1 + i, 0, 0]);
+    let j = 0, y = 1; while (j < n - 1) { const w = ri(2, 3); o.push([BLOCK, x + 1 + j, y, w, 1]); j += w + ri(2, 3); y = Math.max(1, Math.min(2, y + ri(-1, 1))); }
+    return {o, w:n + 3};
+  }
+  function corrSeg(x, r, ctx, ph) {
+    const ri = (a, b) => a + Math.floor(r() * (b - a + 1)), o = [], g = ph.g, wave = ph.m === 2;
+    if (ph.m === 1 && r() < .25) {
+      const w = ri(12, 18); for (let i = 3; i < w - 2; i += ri(3, 5)) o.push([SAW, x + i, ri(1, CEIL - 3), ri(1, 2)]);
+      return {o, w, open:true};
+    }
+    const k = ri(10, 18); let f = ctx.f, d = 0, run = 0;
+    for (let i = 0; i < k; i++) {
+      if (run <= 0) { d = wave ? [-1, 1, 1, -1, 0][ri(0, 4)] : ri(-1, 1); run = wave ? ri(2, 6) : ri(2, 5); }
+      run--;
+      const st = wave ? d : (r() < .5 ? d : 0);
+      const nf = Math.max(0, Math.min(CEIL - g, f + st)); if (nf === f && st) run = 0; f = nf;
+      if (f > 0) o.push([BLOCK, x + i, 0, 1, f]);
+      if (f + g < CEIL) o.push([BLOCK, x + i, f + g, 1, CEIL - f - g]);
+      if (ph.spk && st === 0 && i > 1 && r() < ph.spk) o.push(r() < .5 ? [SPIKE, x + i, f, 0] : [SPIKE, x + i, f + g - 1, 1]);
+    }
+    return {o, w:k, f};
+  }
+  function generate(spec, onProg) {
+    const r = mulberry(spec.seed);
+    const L = {id:spec.id, name:spec.name, hue:spec.hue, bpm:spec.bpm, sp:spec.phases[0].sp, m:spec.phases[0].m, o:[]};
+    const P = prep(L, true);
+    let front = [{p:newP(L), par:-1, h:0}], x = 14;
+    const ctx = {f:0, gs:1, m:L.m, sp:L.sp};
+    const adv = (fr, xe) => { let mn = Infinity; while (fr[0].p.x < xe - 1) { fr = solveStep(P, fr); if (!fr.length) return null; mn = Math.min(mn, fr.length); } return {fr, mn}; };
+    const tryAdd = (objs, w) => {
+      const n0 = L.o.length; const P2 = prep({o:L.o.concat(objs), m:L.m, sp:L.sp}, true);
+      const res = (() => { let fr = front, mn = Infinity; while (fr[0].p.x < x + w - 1) { fr = solveStep(P2, fr); if (!fr.length) return null; mn = Math.min(mn, fr.length); } return {fr, mn}; })();
+      return res && {objs, w, fr:res.fr, mn:res.mn, n0};
+    };
+    for (const ph of spec.phases) {
+      const tr = [];
+      if (ph.m === 0 && ctx.gs < 0) { tr.push([G_DN, x, 0]); ctx.gs = 1; }
+      if (ph.m !== ctx.m) { tr.push([P_HOP + ph.m, x + 1, ph.m ? 2 : 0]); if (ctx.m === 0) ctx.f = 0; }
+      if (ph.sp !== ctx.sp) tr.push([SP0 + ph.sp, x + 2, 4]);
+      const wasHop = ctx.m === 0;
+      ctx.m = ph.m; ctx.sp = ph.sp;
+      let objs = tr.slice(), w = ph.m === 0 ? (wasHop ? 4 : 8) : 5;
+      if (ph.m && wasHop) { for (let i = 0; i < 5; i++) objs.push([BLOCK, x + 3 + i, 7 - i * .5 + 1, 1, CEIL - (8 - i * .5)]); }
+      const t0 = tryAdd(objs, w); if (!t0) throw new Error('переход не проходится');
+      for (const o of objs) P.add(o); front = t0.fr; x += w;
+      let fails = 0;
+      for (let s = 0; s < ph.n; s++) {
+        const cands = [];
+        for (let c = 0; c < (ph.k || 4); c++) {
+          const sr = mulberry(Math.floor(r() * 1e9));
+          let seg, pre = [];
+          if (ph.m === 0) seg = hopSeg(x, sr, ctx.sp);
+          else {
+            if (ph.flip && sr() < ph.flip) { pre.push([ctx.gs > 0 ? G_UP : G_DN, x, 3]); }
+            seg = corrSeg(x + (pre.length ? 1 : 0), sr, ctx, ph); seg.w += pre.length ? 1 : 0; seg.o = pre.concat(seg.o);
+          }
+          const res = tryAdd(seg.o, seg.w); if (res) { res.f = seg.f; res.flip = pre.length > 0; res.open = seg.open; cands.push(res); }
+        }
+        let pick = null;
+        const ok = cands.filter(c => c.mn >= (spec.minN || 3));
+        for (const c of (ok.length ? ok : cands)) if (!pick || c.mn < pick.mn) pick = c;
+        if (!pick) {
+          fails++; s--;
+          const ys = front.map(q => q.p.y).sort((a, b) => a - b), my = ys[ys.length >> 1];
+          const bw = ph.m === 0 ? 3 : 3, bo = [];
+          if (ph.m) { ctx.f = Math.max(0, Math.min(CEIL - ph.g, Math.round(my - ph.g / 2))); }
+          const res = tryAdd(bo, bw); if (!res) throw new Error('тупик на x=' + x);
+          front = res.fr; x += bw; if (fails > 40) throw new Error('слишком много тупиков');
+          continue;
+        }
+        for (const o of pick.objs) P.add(o);
+        front = pick.fr; x += pick.w;
+        if (pick.f != null) ctx.f = pick.f;
+        if (pick.flip) ctx.gs = -ctx.gs;
+        if (onProg) onProg(spec.name, s / ph.n);
+      }
+      if (ph.m && ctx.gs < 0 && ph === spec.phases[spec.phases.length - 1]) { P.add([G_DN, x, 3]); ctx.gs = 1; x += 2; }
+    }
+    L.end = x + 12;
+    const S = solver(prep(L)); let res; do res = S.run(1e9); while (!res.done);
+    if (!res.ok) throw new Error('итоговая проверка не прошла на x=' + res.x.toFixed(1));
+    L.sol = rle(res.inputs);
+    return L;
+  }
+  const SPECS = [
+    {id:'b0', name:'Жужжащая бездна', hue:268, bpm:146, seed:7101, minN:4, phases:[
+      {m:0, sp:1, n:12}, {m:1, sp:1, n:6, g:3, spk:.15}, {m:0, sp:2, n:10}, {m:2, sp:1, n:7, g:3}, {m:1, sp:2, n:6, g:3, flip:.35}, {m:0, sp:2, n:12}, {m:2, sp:2, n:5, g:3, spk:.1}]},
+    {id:'b1', name:'Мухобойня', hue:356, bpm:164, seed:2207, minN:3, phases:[
+      {m:0, sp:2, n:10}, {m:2, sp:2, n:9, g:2.5, flip:.3}, {m:1, sp:2, n:7, g:2.8, spk:.2}, {m:0, sp:3, n:10}, {m:2, sp:3, n:8, g:3, flip:.25}, {m:1, sp:1, n:5, g:2.6, spk:.25}, {m:0, sp:2, n:10}]},
+    {id:'b2', name:'Последний взмах', hue:190, bpm:174, seed:9313, minN:2, phases:[
+      {m:0, sp:2, n:8}, {m:1, sp:3, n:6, g:3, flip:.3}, {m:2, sp:3, n:8, g:2.5, flip:.3}, {m:0, sp:3, n:12}, {m:2, sp:2, n:10, g:2.2, spk:.1}, {m:1, sp:2, n:7, g:2.5, spk:.25, flip:.3}, {m:0, sp:3, n:10}, {m:2, sp:3, n:8, g:2.4, flip:.4}, {m:0, sp:2, n:8}]},
+  ];
+
+  /* ---------- хранилище ---------- */
+  const LS = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } };
+  const SS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
+  let best = LS('gfBest1', {}), mine = LS('gfLevels1', []);
+  let built = BUILTIN;
+  const blank = () => ({id:'u' + Date.now().toString(36), name:'Мой уровень', hue:140, bpm:150, sp:1, m:0, o:[[SPIKE, 20, 0, 0], [BLOCK, 26, 0, 2, 1], [SPIKE, 28, 0, 0], [SPIKE, 29, 0, 0], [BLOCK, 30, 0, 2, 2]]});
+  const validL = L => L && Array.isArray(L.o) && L.o.length <= 8000 && L.o.every(o => Array.isArray(o) && o.length >= 3 && o.length <= 5 && o.every(n => typeof n === 'number' && isFinite(n)) && o[0] >= 1 && o[0] <= 14 && o[1] >= 0 && o[1] < 5000 && o[2] >= 0 && o[2] < CEIL);
+  const toCode = L => 'GFLY1:' + btoa(unescape(encodeURIComponent(JSON.stringify({name:L.name, hue:L.hue, bpm:L.bpm, sp:L.sp, m:L.m, o:L.o}))));
+  function fromCode(s) {
+    try { s = String(s).trim(); if (!s.startsWith('GFLY1:')) return null; const L = JSON.parse(decodeURIComponent(escape(atob(s.slice(6)))));
+      if (!validL(L)) return null; L.name = String(L.name || 'Уровень').slice(0, 30); L.hue = +L.hue || 140; L.bpm = Math.max(90, Math.min(200, +L.bpm || 150)); L.sp = Math.max(0, Math.min(3, L.sp | 0)); L.m = Math.max(0, Math.min(2, L.m | 0)); L.id = 'u' + Date.now().toString(36); return L; } catch (e) { return null; }
   }
 
-  /* ---------- интерфейс ---------- */
-  function flash(s) { st.msg = s; st.msgT = 2.2; }
-  const css = document.createElement('style'); css.textContent = `
-#wsUI{position:fixed;inset:0;z-index:30;display:flex;background:#16120e;color:var(--ink);font-size:13px}
-#wsSide{width:340px;flex:none;display:flex;flex-direction:column;border-right:1px solid var(--line);background:rgba(0,0,0,.25)}
-#wsTabs{display:flex;flex-wrap:wrap;gap:4px;padding:10px 10px 6px}#wsTabs button{flex:1;padding:7px 4px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-weight:600;font-size:12px}
-#wsTabs button.on{background:var(--acc);color:#1b1408;border-color:transparent}
-#wsPanel{flex:1;overflow:auto;padding:6px 12px 14px}#wsPanel h3{margin:10px 0 6px;font-size:14px}#wsPanel .help{color:var(--mute);font-size:12px;line-height:1.45;margin:4px 0 8px}
-#wsPanel input[type=text],#wsPanel textarea,#wsPanel select{width:100%;box-sizing:border-box;padding:7px 9px;border-radius:8px;background:rgba(255,255,255,.07);border:1px solid var(--line);color:var(--ink);font:inherit}
-#wsPanel textarea{height:70px;font-size:11px;resize:vertical}
-.wsRow{display:flex;gap:6px;align-items:center;margin:6px 0;flex-wrap:wrap}.wsRow .btn{padding:7px 10px;font-size:12px}
-.wsGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}.wsGrid button{padding:7px 4px;border-radius:8px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:12px}
-.wsGrid button.on{outline:2px solid var(--acc)}
-.wsSw{width:28px;height:28px;border-radius:8px;border:2px solid transparent;cursor:pointer}.wsSw.on{border-color:#fff}
-.wsSl{display:grid;grid-template-columns:110px 1fr;align-items:center;gap:6px;margin:4px 0}.wsSl input{width:100%}
-.wsRule{display:grid;grid-template-columns:1fr 92px 28px;gap:5px;margin:5px 0;align-items:center}.wsRule button{padding:5px 0;border-radius:6px;background:rgba(255,255,255,.08);border:1px solid var(--line)}
-.wsWork{display:flex;justify-content:space-between;align-items:center;gap:6px;padding:7px 8px;border-radius:8px;background:rgba(255,255,255,.05);margin:4px 0}.wsWork span{color:var(--mute);font-size:11px}
-.wsStat{display:grid;grid-template-columns:1fr auto;gap:2px 10px;color:var(--mute);margin:6px 0}.wsStat b{color:var(--ink);text-align:right}
-#wsMain{flex:1;position:relative;min-width:0}#wsCv{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
-#wsTop{position:absolute;left:12px;top:10px;right:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;pointer-events:none}#wsTop>*{pointer-events:auto}
-#wsTop .btn{padding:7px 12px;font-size:12px}#wsScore{padding:6px 12px;border-radius:10px;font-weight:700}
-#wsMsg{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);padding:8px 14px;border-radius:10px;background:rgba(0,0,0,.75);font-weight:600;pointer-events:none;transition:opacity .3s}
-@media (max-width:800px){#wsUI{flex-direction:column-reverse}#wsSide{width:auto;height:46%}}`;
+  /* ---------- музыка (своя, процедурная) ---------- */
+  const MUS = {on:LS('gfMus', true), run:false, next:0, step:0, bpm:150, beats:[], pulse:0};
+  function tone(t, f, dur, type, vol, f2) {
+    const o = AC.createOscillator(), g = AC.createGain(); o.type = type; o.frequency.setValueAtTime(f, t); if (f2) o.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0008, t + dur); o.connect(g); g.connect(master); o.start(t); o.stop(t + dur + .02);
+  }
+  function hit(t, dur, vol, hp) {
+    const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = noiseBuf; f.type = 'highpass'; f.frequency.value = hp;
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.0008, t + dur); s.connect(f); f.connect(g); g.connect(master); s.start(t, Math.random() * .5); s.stop(t + dur + .02);
+  }
+  const ROOTS = [0, -4, -2, -5], ARP = [0, 3, 7, 12, 7, 3, 10, 7];
+  function musStep(s, t) {
+    const b = s % 16, bar = (s >> 4) % 4, root = ROOTS[bar], sd = 60 / MUS.bpm / 4;
+    if (b % 4 === 0) { tone(t, 140, .2, 'sine', .8, 38); MUS.beats.push(t); }
+    if (b === 4 || b === 12) hit(t, .14, .3, 1400);
+    if (b % 2 === 1) hit(t, .035, .1, 7000);
+    if ([0, 3, 6, 8, 11, 14].includes(b)) tone(t, 55 * Math.pow(2, root / 12) * (b === 6 || b === 14 ? 2 : 1), sd * 1.5, 'square', .09);
+    if (b % 2 === 0 && (s >> 6) % 2 === 1) tone(t, 440 * Math.pow(2, (root + ARP[(b >> 1) % 8]) / 12), sd * .9, 'triangle', .07);
+  }
+  function musStart(bpm) { if (!AC) return; MUS.bpm = bpm || 150; MUS.next = AC.currentTime + .06; MUS.step = 0; MUS.beats = []; MUS.run = true; }
+  function musTick() {
+    if (!AC) return;
+    while (MUS.beats.length && MUS.beats[0] <= AC.currentTime) { MUS.beats.shift(); MUS.pulse = 1; }
+    if (!MUS.run || !MUS.on) return; const sd = 60 / MUS.bpm / 4;
+    while (MUS.next < AC.currentTime + .12) { musStep(MUS.step, MUS.next); MUS.next += sd; MUS.step++; }
+  }
+  function boom() { if (!AC) return; const t = AC.currentTime; hit(t, .4, .5, 300); tone(t, 220, .3, 'sawtooth', .15, 50); }
+
+  /* ---------- состояние и интерфейс ---------- */
+  const st = {open:false, view:'sel', ui:null, cv:null, ctx:null, hold:false, run:null, ed:null, msg:'', msgT:0, parts:[], shake:0, gen:null};
+  const css = document.createElement('style');
+  css.textContent = `#gfUI{position:fixed;inset:0;z-index:30;background:#07060c;color:#fff;font-family:inherit;user-select:none}
+#gfCv{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+#gfTop{position:absolute;top:10px;left:10px;right:10px;display:flex;gap:8px;align-items:center;pointer-events:none}#gfTop>*{pointer-events:auto}
+#gfTop .btn{padding:7px 12px;font-size:12px}#gfTop .sp{flex:1}
+#gfSel{position:absolute;inset:0;overflow:auto;padding:28px 16px;background:radial-gradient(circle at 50% 0,#2a1748,#07060c 70%)}
+#gfSel .wrap{max-width:760px;margin:0 auto}#gfSel h2{font-size:30px;margin:0 0 4px}#gfSel .sub{opacity:.7;margin-bottom:18px;font-size:14px}
+.gfCard{display:flex;gap:14px;align-items:center;padding:14px 16px;margin-bottom:10px;border-radius:14px;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);flex-wrap:wrap}
+.gfCard .nm{font-weight:700;font-size:17px}.gfCard .inf{font-size:12px;opacity:.7;margin-top:2px}.gfCard .gr{flex:1;min-width:180px}
+.gfCard .bar{height:6px;border-radius:3px;background:rgba(255,255,255,.1);margin-top:7px;overflow:hidden}.gfCard .bar i{display:block;height:100%;background:#5be37d}
+.gfCard .btn{padding:7px 11px;font-size:12px}.gfTag{display:inline-block;font-size:11px;padding:2px 7px;border-radius:6px;background:#b8233a;margin-left:6px;vertical-align:2px}
+#gfSel h3{margin:22px 0 10px;font-size:16px;opacity:.85}#gfSel .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+#gfEdBar{position:absolute;left:10px;top:56px;bottom:10px;width:150px;overflow:auto;display:flex;flex-direction:column;gap:4px}
+#gfEdBar button{padding:6px 8px;font-size:12px;text-align:left;border-radius:8px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#fff}
+#gfEdBar button.on{background:#f0b13a;color:#1b1408;border-color:transparent}
+#gfTop input,#gfTop select{background:rgba(0,0,0,.5);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:6px 8px;font-size:12px}
+#gfMsg{position:absolute;left:50%;top:58px;transform:translateX(-50%);padding:9px 16px;border-radius:10px;background:rgba(0,0,0,.75);font-weight:600;pointer-events:none;transition:opacity .3s;text-align:center;max-width:90%}
+#gfWin{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:24px 28px;border-radius:16px;background:rgba(10,8,20,.92);border:1px solid rgba(255,255,255,.2);text-align:center;min-width:260px}
+#gfWin h2{margin:0 0 6px}#gfWin .row{display:flex;gap:8px;justify-content:center;margin-top:14px}
+@media (max-width:700px){#gfEdBar{width:110px;top:96px}#gfTop{flex-wrap:wrap}}`;
   document.head.appendChild(css);
 
   function buildUI() {
-    const ui = document.createElement('div'); ui.id = 'wsUI'; ui.hidden = true;
-    ui.innerHTML = `<div id="wsSide"><div id="wsTabs"></div><div id="wsPanel"></div></div>
-      <div id="wsMain"><canvas id="wsCv"></canvas><div id="wsTop"><button class="btn" id="wsBack">Меню</button><button class="btn" id="wsRun"></button><button class="btn" id="wsSpd"></button><button class="btn pri" id="wsGood">Хвалить</button><button class="btn" id="wsBad">Ругать</button><span class="glass" id="wsScore"></span></div><div id="wsMsg"></div></div>`;
-    document.body.appendChild(ui); st.ui = ui; st.cv = ui.querySelector('#wsCv'); st.ctx = st.cv.getContext('2d');
-    ui.querySelector('#wsBack').onclick = () => setMode('menu');
-    ui.querySelector('#wsRun').onclick = () => { st.run = !st.run; render(); };
-    ui.querySelector('#wsSpd').onclick = () => { st.speed = st.speed === 1 ? 4 : st.speed === 4 ? 16 : 1; render(); };
-    ui.querySelector('#wsGood').onclick = () => praise(1); ui.querySelector('#wsBad').onclick = () => praise(-1);
-    st.cv.addEventListener('mousedown', e => { st.painting = true; st.lastCell = -1; paintAt(e, true); });
-    st.cv.addEventListener('mousemove', e => { if (st.painting) paintAt(e, false); });
-    addEventListener('mouseup', () => { st.painting = false; });
-    st.cv.addEventListener('touchstart', e => { const t = e.touches[0]; st.painting = true; st.lastCell = -1; paintAt(t, true); e.preventDefault(); }, {passive:false});
-    st.cv.addEventListener('touchmove', e => { if (st.painting) paintAt(e.touches[0], false); e.preventDefault(); }, {passive:false});
-    st.cv.addEventListener('touchend', () => { st.painting = false; });
+    const ui = document.createElement('div'); ui.id = 'gfUI'; ui.hidden = true;
+    ui.innerHTML = `<canvas id="gfCv"></canvas><div id="gfTop"></div><div id="gfEdBar" hidden></div><div id="gfMsg"></div><div id="gfWin" hidden></div><div id="gfSel"></div>`;
+    document.body.appendChild(ui); st.ui = ui; st.cv = ui.querySelector('#gfCv'); st.ctx = st.cv.getContext('2d');
+    const cv = st.cv;
+    cv.addEventListener('mousedown', e => { if (st.view === 'play') { st.hold = true; } else if (st.view === 'ed') edMouse(e, 'down'); });
+    addEventListener('mousemove', e => { if (st.open && st.view === 'ed') edMouse(e, 'move'); });
+    addEventListener('mouseup', e => { if (!st.open) return; st.hold = false; if (st.view === 'ed') edMouse(e, 'up'); });
+    cv.addEventListener('contextmenu', e => e.preventDefault());
+    cv.addEventListener('wheel', e => { if (st.view === 'ed') { st.ed.camX = Math.max(-12, st.ed.camX + (e.deltaY + e.deltaX) / 30); } }, {passive:true});
+    cv.addEventListener('touchstart', e => { e.preventDefault(); if (st.view === 'play') st.hold = true; else if (st.view === 'ed') edMouse(e.touches[0], 'down'); }, {passive:false});
+    cv.addEventListener('touchmove', e => { e.preventDefault(); if (st.view === 'ed') edMouse(e.touches[0], 'move'); }, {passive:false});
+    cv.addEventListener('touchend', e => { e.preventDefault(); if (!e.touches.length) { st.hold = false; if (st.view === 'ed') edMouse(null, 'up'); } }, {passive:false});
+    addEventListener('keyup', e => { if (st.open && (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW')) st.hold = false; });
   }
-  function cellAt(e) { const r = st.cv.getBoundingClientRect(), x = Math.floor((e.clientX - r.left - st.ox) / st.cs), y = Math.floor((e.clientY - r.top - st.oy) / st.cs); return x >= 0 && y >= 0 && x < AW && y < AH ? {x, y} : null; }
-  function paintAt(e, first) {
-    const c = cellAt(e); if (!c) return; const i = c.y * AW + c.x;
-    if (st.tab !== 'arena') { if (first) flash('Чтобы строить, открой вкладку «Арена»'); return; }
-    const t = st.tool; if (!first && i === st.lastCell) return; st.lastCell = i;
-    if (t === 'wall' || t === 'zoneA' || t === 'zoneB' || t === 'floor') { WK.tiles[i] = {wall:1, zoneA:2, zoneB:3, floor:0}[t]; if (t === 'wall') WK.ents = WK.ents.filter(e => e.x !== c.x || e.y !== c.y); }
-    else if (t === 'erase') { WK.tiles[i] = 0; WK.ents = WK.ents.filter(e => e.x !== c.x || e.y !== c.y); }
-    else if (t === 'start') { if (!first) return; if (WK.tiles[i] === 1) WK.tiles[i] = 0; WK.start = {x:c.x, y:c.y}; }
-    else if (ENTS[t]) { if (!first) return; if (WK.tiles[i] === 1) WK.tiles[i] = 0; WK.ents = WK.ents.filter(e => e.x !== c.x || e.y !== c.y); if (WK.ents.length >= 40) return flash('Слишком много предметов'); WK.ents.push({k:t, x:c.x, y:c.y}); }
-    pop = null; restartLive();
-  }
-  const TABS = [['fly', 'Муха'], ['arena', 'Арена'], ['rules', 'Правила'], ['train', 'Обучение'], ['works', 'Работы']];
-  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
-  function render() {
-    if (!st.ui) return; const P = st.ui.querySelector('#wsPanel');
-    st.ui.querySelector('#wsTabs').innerHTML = TABS.map(([k, n]) => `<button data-t="${k}" class="${st.tab === k ? 'on' : ''}">${n}</button>`).join('');
-    st.ui.querySelectorAll('#wsTabs button').forEach(b => b.onclick = () => { st.tab = b.dataset.t; render(); });
-    st.ui.querySelector('#wsRun').textContent = st.run ? 'Пауза' : 'Пуск'; st.ui.querySelector('#wsSpd').textContent = '×' + st.speed;
-    const g = champ(), d = dims(), gv = k => g[d.GI_X + S.X[k]];
-    if (st.tab === 'fly') {
-      P.innerHTML = `<h3>Твоя муха</h3><input type="text" id="wsFName" maxlength="20" value="${esc(WK.fly.name)}">
-        <div class="wsRow">${COLORS.map(([c, n], i) => `<div class="wsSw ${WK.fly.col === i ? 'on' : ''}" data-c="${i}" title="${n}" style="background:${c}"></div>`).join('')}</div>
-        <h3>Гены</h3>${GENES.map(([k, n]) => `<div class="wsSl"><span>${n}</span><input type="range" min="-2" max="2" step="0.1" value="${gv(k).toFixed(1)}" data-g="${k}"></div>`).join('')}
-        <div class="wsRow"><button class="btn" id="wsRnd">Случайная муха</button><button class="btn" id="wsNew">Начать с нуля</button></div>
-        <p class="help">Гены задают врождённое: насколько муха чует сахар, видит тень тапка, чувствует ветер, как быстро учится, насколько пуглива и быстра. Остальное она выучит сама — по правилам, которые ты придумаешь.</p>`;
-      P.querySelector('#wsFName').oninput = e => { WK.fly.name = e.target.value || 'Жужа'; };
-      P.querySelectorAll('.wsSw').forEach(s => s.onclick = () => { WK.fly.col = +s.dataset.c; render(); });
-      P.querySelectorAll('[data-g]').forEach(s => s.oninput = () => { g[d.GI_X + S.X[s.dataset.g]] = +s.value; pop = null; restartLive(); });
-      P.querySelector('#wsRnd').onclick = () => { const n = newGenome(); n.set(g.subarray(d.GL), d.GL); WK.champ = n; pop = null; restartLive(); render(); };
-      P.querySelector('#wsNew').onclick = () => { WK.champ = newGenome(); WK.gen = 0; WK.hist = []; WK.best = 0; pop = null; restartLive(); flash('Муха забыла всё выученное'); render(); };
-    } else if (st.tab === 'arena') {
-      const tools = [['wall', 'Стена'], ['erase', 'Ластик'], ['start', 'Старт'], ['zoneA', 'Синяя зона'], ['zoneB', 'Розовая зона'], ['floor', 'Пол'], ...Object.entries(ENTS)];
-      P.innerHTML = `<h3>Строй арену</h3><p class="help">Выбери предмет и кликай по полю. Стены и зоны можно рисовать, зажав кнопку.</p>
-        <div class="wsGrid">${tools.map(([k, n]) => `<button data-k="${k}" class="${st.tool === k ? 'on' : ''}">${n}</button>`).join('')}</div>
-        <div class="wsRow"><button class="btn" id="wsClear">Очистить арену</button></div>
-        <p class="help"><b>Сахар</b> исчезает, когда его съели, и вырастает снова. <b>Яд</b> пахнет, но вредный. <b>Мячик</b> муха берёт и носит. <b>Корзина</b> — куда нести мячик. <b>Тапок</b> раз в 4 секунды бьёт по клетке: перед ударом видна тень. <b>Вентилятор</b> сдувает муху.</p>`;
-      P.querySelectorAll('[data-k]').forEach(b => b.onclick = () => { st.tool = b.dataset.k; render(); });
-      P.querySelector('#wsClear').onclick = () => { const w = blankWork(); WK.tiles = w.tiles; WK.ents = []; pop = null; restartLive(); };
-    } else if (st.tab === 'rules') {
-      P.innerHTML = `<h3>Чему учить</h3><p class="help">Правила решают, за что муха получает награду (плюс) и боль (минус). Она будет стараться набирать очки — так её можно научить чему угодно в арене.</p>
-        <div id="wsRules">${WK.rules.map((r, i) => `<div class="wsRule"><select data-i="${i}" data-f="ev">${Object.entries(EVENTS).map(([k, n]) => `<option value="${k}" ${r.ev === k ? 'selected' : ''}>Когда ${n}</option>`).join('')}</select>
-          <select data-i="${i}" data-f="v">${[5, 3, 2, 1, 0.5, -0.5, -1, -2, -3, -5].map(v => `<option value="${v}" ${+r.v === v ? 'selected' : ''}>${v > 0 ? 'награда +' + v : 'боль ' + v}</option>`).join('')}</select><button data-del="${i}">×</button></div>`).join('')}</div>
-        <div class="wsRow"><button class="btn" id="wsAddR">Добавить правило</button></div>`;
-      P.querySelectorAll('select[data-i]').forEach(s => s.onchange = () => { const r = WK.rules[+s.dataset.i]; if (s.dataset.f === 'ev') r.ev = s.value; else r.v = +s.value; pop = null; });
-      P.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { WK.rules.splice(+b.dataset.del, 1); pop = null; render(); });
-      P.querySelector('#wsAddR').onclick = () => { if (WK.rules.length < 10) WK.rules.push({ev:'eat', v:1}); render(); };
-    } else if (st.tab === 'train') {
-      const bs = WK.bestStat || {}, stats = Object.keys(EVENTS).filter(k => bs[k]).map(k => `<span>${EVENTS[k]}</span><b>${k === 'zoneA' || k === 'zoneB' || k === 'move' || k === 'still' ? bs[k].toFixed(0) + ' с' : bs[k] | 0}</b>`).join('');
-      P.innerHTML = `<h3>Обучение</h3><p class="help"><b>Тренировка</b>: ${POP} копий твоей мухи проходят арену по ${EP_T} секунд, лучшая передаёт гены и выученное дальше. <b>Хвалить/Ругать</b> — учить живую муху самому, как собаку кликером.</p>
-        <div class="wsRow"><button class="btn pri" data-n="10">Тренировать ×10</button><button class="btn" data-n="50">×50</button><button class="btn" data-n="200">×200</button></div>
-        <div class="wsRow"><button class="btn" id="wsKeep">Запомнить выученное</button><button class="btn" id="wsRe">Перезапустить муху</button></div>
-        <div class="wsStat"><span>Поколение</span><b>${WK.gen}</b><span>Лучший счёт за забег</span><b>${(WK.best || 0).toFixed(1)}</b>${stats}</div>
-        <canvas id="wsChart" width="300" height="90" style="width:100%;height:90px;background:rgba(0,0,0,.3);border-radius:8px"></canvas>`;
-      P.querySelectorAll('[data-n]').forEach(b => b.onclick = () => { b.textContent = 'Учится…'; setTimeout(() => { const n = generations(+b.dataset.n); flash(`Пройдено поколений: ${n}`); render(); }, 30); });
-      P.querySelector('#wsKeep').onclick = () => { keepLearned(); render(); };
-      P.querySelector('#wsRe').onclick = () => { restartLive(); };
-      chart(P.querySelector('#wsChart'));
-    } else if (st.tab === 'works') {
-      const L = loadList();
-      P.innerHTML = `<h3>Эта работа</h3><input type="text" id="wsWName" maxlength="40" value="${esc(WK.name)}">
-        <div class="wsRow"><button class="btn pri" id="wsSave">Сохранить</button><button class="btn" id="wsExp">Скачать файл</button><button class="btn" id="wsImpF">Открыть файл</button><input type="file" id="wsFile" accept=".json,application/json" hidden></div>
-        <h3>Поделиться кодом</h3><p class="help">Скопируй код и отправь другу — он вставит его у себя и получит арену, правила и обученную муху.</p>
-        <div class="wsRow"><button class="btn" id="wsCopy">Скопировать код</button><button class="btn" id="wsPaste">Открыть код</button></div><textarea id="wsCode" placeholder="Вставь сюда код работы FLYW1:…"></textarea>
-        <h3>Мои работы</h3>${L.length ? L.map((w, i) => `<div class="wsWork"><div><b>${esc(w.name)}</b><br><span>${esc(w.fly && w.fly.name || '')} · поколение ${w.gen | 0} · счёт ${(+w.best || 0).toFixed(1)}</span></div><div class="wsRow" style="margin:0"><button class="btn" data-o="${i}">Открыть</button><button class="btn" data-x="${i}">×</button></div></div>`).join('') : '<p class="help">Пока пусто.</p>'}
-        <h3>Примеры</h3>${[['maze', 'Сахар за стенкой'], ['ball', 'Принеси мячик'], ['slipper', 'Не попадись под тапок'], ['zone', 'Сиди в синей зоне'], ['poison', 'Сахар, а не яд']].map(([k, n]) => `<div class="wsWork"><b>${n}</b><button class="btn" data-ex="${k}">Открыть</button></div>`).join('')}
-        <h3>Работы игроков</h3><p class="help">Общая лента работ появится, когда к игре подключат базу данных. Пока работами делятся кодом или файлом.</p>`;
-      P.querySelector('#wsWName').oninput = e => { WK.name = e.target.value || 'Моя работа'; };
-      P.querySelector('#wsSave').onclick = saveWork; P.querySelector('#wsExp').onclick = exportFile;
-      const fi = P.querySelector('#wsFile'); P.querySelector('#wsImpF').onclick = () => fi.click();
-      fi.onchange = () => { const f = fi.files[0]; if (!f) return; f.text().then(t => openWork(JSON.parse(t))).catch(() => flash('Это не файл работы')); };
-      P.querySelector('#wsCopy').onclick = () => { const c = toCode(); P.querySelector('#wsCode').value = c; try { navigator.clipboard.writeText(c).then(() => flash('Код скопирован'), () => flash('Код в поле ниже — скопируй его')); } catch (e) { flash('Код в поле ниже — скопируй его'); } };
-      P.querySelector('#wsPaste').onclick = () => { try { openWork(fromCode(P.querySelector('#wsCode').value)); } catch (e) { flash('Код не подошёл'); } };
-      P.querySelectorAll('[data-o]').forEach(b => b.onclick = () => openWork(L[+b.dataset.o]));
-      P.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { L.splice(+b.dataset.x, 1); saveList(L); render(); });
-      P.querySelectorAll('[data-ex]').forEach(b => b.onclick = () => { WK = example(b.dataset.ex); pop = null; restartLive(); flash(`Пример: ${WK.name}. Открой «Обучение»`); render(); });
-    }
-  }
-  function chart(cv) { if (!cv) return; const g = cv.getContext('2d'), w = cv.width, h = cv.height, H = WK.hist; g.clearRect(0, 0, w, h); if (H.length < 2) { g.fillStyle = 'rgba(255,255,255,.4)'; g.font = '12px system-ui'; g.fillText('Здесь будет график обучения', 10, 50); return; }
-    let mn = 0, mx = 1; for (const p of H) { mn = Math.min(mn, p.a, p.b); mx = Math.max(mx, p.b); }
-    for (const [k, col] of [['a', 'rgba(255,255,255,.4)'], ['b', '#ffc94a']]) { g.strokeStyle = col; g.lineWidth = 2; g.beginPath(); H.forEach((p, i) => { const x = i / (H.length - 1) * (w - 4) + 2, y = h - 4 - (p[k] - mn) / (mx - mn) * (h - 8); i ? g.lineTo(x, y) : g.moveTo(x, y); }); g.stroke(); } }
+  const $g = s => st.ui.querySelector(s);
+  function flash(m, t = 2.5) { st.msg = m; st.msgT = t; const el = $g('#gfMsg'); el.textContent = m; el.style.opacity = 1; }
+  const levels = () => (built || []);
+  const findL = id => levels().find(l => l.id === id) || mine.find(l => l.id === id);
 
-  /* ---------- рисование арены ---------- */
-  function draw() {
-    const cv = st.cv, ctx = st.ctx, dpr = Math.min(2, devicePixelRatio || 1), W0 = cv.clientWidth, H0 = cv.clientHeight;
-    if (cv.width !== Math.round(W0 * dpr) || cv.height !== Math.round(H0 * dpr)) { cv.width = Math.round(W0 * dpr); cv.height = Math.round(H0 * dpr); }
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#16120e'; ctx.fillRect(0, 0, W0, H0);
-    const cs = st.cs = Math.max(8, Math.floor(Math.min((W0 - 24) / AW, (H0 - 70) / AH))), ox = st.ox = Math.floor((W0 - cs * AW) / 2), oy = st.oy = Math.floor(56 + (H0 - 56 - cs * AH) / 2);
-    for (let y = 0; y < AH; y++) for (let x = 0; x < AW; x++) { const t = WK.tiles[y * AW + x], X = ox + x * cs, Y = oy + y * cs;
-      ctx.fillStyle = t === 1 ? '#5a4232' : t === 2 ? '#2e5c9a' : t === 3 ? '#a8487a' : ((x + y) & 1 ? '#d9c8a6' : '#e4d4b2'); ctx.fillRect(X, Y, cs, cs);
-      if (t === 1) { ctx.fillStyle = '#6e5440'; ctx.fillRect(X, Y, cs, Math.max(2, cs / 5)); ctx.fillStyle = '#3e2c20'; ctx.fillRect(X, Y + cs - Math.max(2, cs / 6), cs, Math.max(2, cs / 6)); } }
-    const f = st.live, ents = f ? f.ents : WK.ents.map(e => ({...e, x:e.x + 0.5, y:e.y + 0.5, off:0, ph:0}));
-    const P = (x, y) => [ox + x * cs, oy + y * cs], u = cs / 8;
-    { const [sx, sy] = P(WK.start.x + 0.5, WK.start.y + 0.5); ctx.strokeStyle = 'rgba(40,160,80,.8)'; ctx.lineWidth = 2; ctx.strokeRect(sx - cs / 2 + 2, sy - cs / 2 + 2, cs - 4, cs - 4); }
-    for (const e of ents) { const [x, y] = P(e.x, e.y);
-      if (e.k === 'sugar') { if (e.off > 0) continue; ctx.fillStyle = '#fbfaf4'; ctx.fillRect(x - 3 * u, y - 3 * u, 6 * u, 6 * u); ctx.fillStyle = '#c8c8be'; ctx.fillRect(x + 2 * u, y - 2 * u, u, 5 * u); }
-      else if (e.k === 'poison') { ctx.fillStyle = '#5bd13a'; ctx.beginPath(); ctx.arc(x, y, 3 * u, 0, TAU); ctx.fill(); ctx.fillStyle = '#1b3a10'; ctx.fillRect(x - 2 * u, y - u, u, u); ctx.fillRect(x + u, y - u, u, u); ctx.fillRect(x - u, y + u, 2 * u, u); }
-      else if (e.k === 'ball') { ctx.fillStyle = '#ff8a1f'; ctx.beginPath(); ctx.arc(x, y, 2.6 * u, 0, TAU); ctx.fill(); ctx.fillStyle = '#ffd0a0'; ctx.fillRect(x - u, y - 2 * u, u, u); }
-      else if (e.k === 'basket') { ctx.fillStyle = '#8a5a30'; ctx.fillRect(x - 3.5 * u, y - 2 * u, 7 * u, 5 * u); ctx.fillStyle = '#b07a40'; for (let k = -3; k < 4; k += 2) ctx.fillRect(x + k * u, y - 2 * u, u, 5 * u); ctx.fillStyle = '#5a3a20'; ctx.fillRect(x - 3.5 * u, y - 3 * u, 7 * u, u); }
-      else if (e.k === 'fan') { const a = performance.now() / 80; ctx.fillStyle = '#3a3a44'; ctx.fillRect(x - u, y, 2 * u, 4 * u); ctx.fillStyle = '#c8d4e0'; for (let b = 0; b < 3; b++) { const aa = a + b * TAU / 3; ctx.fillRect(x + Math.cos(aa) * 2 * u - u, y + Math.sin(aa) * 2 * u - u, 2 * u, 2 * u); } ctx.strokeStyle = 'rgba(200,230,255,.25)'; ctx.beginPath(); ctx.arc(x, y, 5 * cs, 0, TAU); ctx.stroke(); }
-      else if (e.k === 'slipper') { const warn = e.ph > 3 && e.ph < 4, k = warn ? (e.ph - 3) : 0; ctx.fillStyle = `rgba(0,0,0,${0.12 + k * 0.4})`; ctx.beginPath(); ctx.arc(x, y, 1.6 * cs * (0.6 + k * 0.4), 0, TAU); ctx.fill();
-        if (e.hitT > 0) { ctx.fillStyle = '#e2557f'; ctx.fillRect(x - 1.4 * cs, y - 0.8 * cs, 2.8 * cs, 1.6 * cs); } else { ctx.fillStyle = 'rgba(226,85,127,.5)'; ctx.fillRect(x - 2 * u, y - 4 * u - (1 - k) * cs, 4 * u, 6 * u); } }
+  /* ---------- выбор уровня ---------- */
+  function renderSel() {
+    st.view = 'sel'; $g('#gfSel').hidden = false; $g('#gfTop').innerHTML = ''; $g('#gfEdBar').hidden = true; $g('#gfWin').hidden = true; MUS.run = false;
+    const card = (L, own) => {
+      const b = best[L.id] || 0, n = L.o.length;
+      return `<div class="gfCard"><div class="gr"><div class="nm">${esc(L.name)}${own ? '' : '<span class="gfTag">Демон</span>'}</div>
+        <div class="inf">${own ? 'Твой уровень · ' : ''}Объектов: ${n} · Лучший: ${b}%${best[L.id + 'a'] ? ' · Муха-ас прошла' : ''}</div><div class="bar"><i style="width:${b}%"></i></div></div>
+        <button class="btn pri" data-a="play" data-id="${L.id}">Играть</button><button class="btn" data-a="prac" data-id="${L.id}">Тренировка</button><button class="btn" data-a="ace" data-id="${L.id}">Муха-ас</button>
+        ${own ? `<button class="btn" data-a="edit" data-id="${L.id}">Изменить</button><button class="btn" data-a="code" data-id="${L.id}">Код</button><button class="btn" data-a="del" data-id="${L.id}">Удалить</button>` : ''}</div>`;
+    };
+    $g('#gfSel').innerHTML = `<div class="wrap"><h2>Геометри Муха</h2><div class="sub">Муха летит вперёд сама — ты только жмёшь. Пробел, W, стрелка вверх, клик или касание. Режимы: прыжки, полёт и волна; порталы меняют режим, гравитацию и скорость. Муха-ас — особая муха, которая проходит любой проходимый уровень.</div>
+      ${built ? levels().map(L => card(L, false)).join('') : `<div class="gfCard"><div class="gr"><div class="nm">Уровни строятся…</div><div class="inf" id="gfGenInf">Каждый кусок проверяет Муха-ас</div></div></div>`}
+      <h3>Мои уровни</h3>${mine.length ? mine.map(L => card(L, true)).join('') : '<div class="sub">Пока пусто. Создай уровень — Муха-ас проверит, можно ли его пройти.</div>'}
+      <div class="row"><button class="btn pri" id="gfNew">Создать уровень</button><button class="btn" id="gfImp">Ввести код уровня</button><button class="btn" id="gfMusB">Музыка: ${MUS.on ? 'вкл' : 'выкл'}</button><button class="btn" id="gfBack">В меню</button></div></div>`;
+    $g('#gfSel').onclick = e => {
+      const b = e.target.closest('button'); if (!b) return; const id = b.dataset.id, a = b.dataset.a;
+      if (b.id === 'gfBack') return setMode('menu');
+      if (b.id === 'gfMusB') { MUS.on = !MUS.on; SS('gfMus', MUS.on); return renderSel(); }
+      if (b.id === 'gfNew') { const L = blank(); mine.push(L); SS('gfLevels1', mine); return openEd(L); }
+      if (b.id === 'gfImp') { const s = prompt('Вставь код уровня (начинается с GFLY1:)'); if (!s) return; const L = fromCode(s); if (!L) return alert('Код не подошёл'); mine.push(L); SS('gfLevels1', mine); return renderSel(); }
+      const L = findL(id); if (!L) return;
+      if (a === 'play') startRun(L, {});
+      else if (a === 'prac') startRun(L, {prac:true});
+      else if (a === 'ace') startRun(L, {ace:true});
+      else if (a === 'edit') openEd(L);
+      else if (a === 'code') { const c = toCode(L); try { navigator.clipboard.writeText(c); } catch (er) {} prompt('Код уровня (скопирован в буфер):', c); }
+      else if (a === 'del') { if (confirm('Удалить уровень «' + L.name + '»?')) { mine = mine.filter(l => l !== L); SS('gfLevels1', mine); renderSel(); } }
+    };
+  }
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;'}[c]));
+
+  /* ---------- забег ---------- */
+  function startRun(L, o) {
+    initAudio();
+    const P = prep(L);
+    st.run = {L, P, p:newP(L), ace:!!o.ace, prac:!!o.prac, fromEd:!!o.fromEd, att:1, deadT:0, acc:0, cps:[], cpT:0, spawnT:0, trail:[], inputs:null, solving:null, won:false, startX:0};
+    st.view = 'play'; $g('#gfSel').hidden = true; $g('#gfEdBar').hidden = true; $g('#gfWin').hidden = true; st.parts = [];
+    $g('#gfTop').innerHTML = `<button class="btn" id="gfQ">${o.fromEd ? 'В редактор' : 'Выход'}</button><span class="glass" id="gfAtt" style="padding:6px 12px;border-radius:10px;font-weight:700"></span><span class="sp"></span>${o.ace ? '' : `<button class="btn" id="gfPr">Тренировка: ${o.prac ? 'вкл' : 'выкл'}</button>`}<button class="btn" id="gfMu">Музыка</button>`;
+    $g('#gfQ').onclick = quitRun;
+    $g('#gfMu').onclick = () => { MUS.on = !MUS.on; SS('gfMus', MUS.on); if (MUS.on) musStart(L.bpm); };
+    if (!o.ace) $g('#gfPr').onclick = () => { startRun(L, {prac:!st.run.prac, fromEd:st.run.fromEd}); };
+    if (o.ace) {
+      if (L.sol) { st.run.inputs = unrle(L.sol); musStart(L.bpm); flash('Муха-ас идёт на уровень'); }
+      else { st.run.solving = solver(P); flash('Муха-ас изучает уровень…', 99); }
+    } else { musStart(L.bpm); if (o.prac) flash('Тренировка: точки сохранения ставятся сами, Z — поставить, X — убрать'); }
+  }
+  function quitRun() { MUS.run = false; const r = st.run; st.run = null; if (r && r.fromEd) openEd(r.L); else renderSel(); }
+  function die() {
+    const r = st.run, p = r.p; r.deadT = .7; boom(); st.shake = .35; MUS.run = false;
+    for (let i = 0; i < 34; i++) { const a = Math.random() * TAU, s = 2 + Math.random() * 9; st.parts.push({x:p.x, y:p.y, vx:Math.cos(a) * s, vy:Math.sin(a) * s, t:.5 + Math.random() * .5, c:r.ace ? '#ffd34d' : `hsl(${r.L.hue},90%,70%)`}); }
+    const pc = Math.min(99, Math.floor(p.x / r.P.len * 100));
+    if (!r.prac && !r.ace && !r.fromEd && pc > (best[r.L.id] || 0)) { best[r.L.id] = pc; SS('gfBest1', best); flash('Новый рекорд: ' + pc + '%'); }
+    if (r.ace) flash('Муха-ас разбилась на ' + pc + '% — такого быть не должно');
+  }
+  function respawn() {
+    const r = st.run; r.att++; r.trail = [];
+    if (r.prac && r.cps.length) {
+      const cp = r.cps[r.cps.length - 1];
+      if (r.spawnT < .45) { cp.f = (cp.f || 0) + 1; if (cp.f >= 2 && r.cps.length) { r.cps.pop(); flash('Неудачная точка убрана'); } }
+      const c2 = r.cps[r.cps.length - 1];
+      r.p = c2 ? Object.assign({}, c2.p) : newP(r.L);
+    } else { r.p = newP(r.L); if (MUS.on) musStart(r.L.bpm); }
+    r.spawnT = 0; r.cpT = 0; r.deadT = 0;
+  }
+  function winRun() {
+    const r = st.run; r.won = true; MUS.run = false;
+    if (!r.prac && !r.fromEd) { if (r.ace) best[r.L.id + 'a'] = 1; else best[r.L.id] = 100; SS('gfBest1', best); }
+    if (AC) { const t = AC.currentTime; [0, 4, 7, 12].forEach((n, i) => tone(t + i * .09, 523 * Math.pow(2, n / 12), .3, 'triangle', .15)); }
+    const w = $g('#gfWin'); w.hidden = false;
+    w.innerHTML = `<h2>${r.ace ? 'Муха-ас прошла уровень' : r.prac ? 'Тренировка пройдена' : 'Уровень пройден!'}</h2><div>${esc(r.L.name)}</div><div style="opacity:.7;margin-top:6px">Попыток: ${r.att}</div>
+      <div class="row"><button class="btn pri" id="gfAg">Ещё раз</button><button class="btn" id="gfEx">${r.fromEd ? 'В редактор' : 'К уровням'}</button></div>`;
+    $g('#gfAg').onclick = () => startRun(r.L, {ace:r.ace, prac:r.prac, fromEd:r.fromEd}); $g('#gfEx').onclick = quitRun;
+  }
+  function tickRun(dt) {
+    const r = st.run; if (!r || r.won) return;
+    if (r.solving) {
+      const res = r.solving.run(14);
+      if (!res.done) { flash('Муха-ас изучает уровень… ' + Math.round(res.prog * 100) + '%', 1); return; }
+      r.solving = null;
+      if (!res.ok) { flash('Муха-ас не нашла пути: уровень невозможен (тупик на ' + Math.floor(res.x / r.P.len * 100) + '%)', 6); r.failX = res.x; r.p.x = res.x; r.p.dead = true; r.deadT = 99; return; }
+      r.inputs = res.inputs; r.L.sol = rle(res.inputs); if (mine.includes(r.L)) SS('gfLevels1', mine); musStart(r.L.bpm); flash('Путь найден — смотри!');
     }
-    if (f) { const [x, y] = P(f.x, f.y), k = Math.max(1, cs / 9), img = flySprite(WK.fly.col, f.v > 1 && (f.wing | 0) % 2 ? 1 : 0);
-      ctx.save(); ctx.translate(x, y); ctx.rotate(f.h); ctx.drawImage(img, -5.5 * k * 1.3, -4.5 * k * 1.3, 11 * k * 1.3, 9 * k * 1.3); ctx.restore();
-      if (f.dop > 0.2) { ctx.fillStyle = `rgba(255,220,80,${Math.min(0.8, f.dop)})`; ctx.font = `700 ${Math.round(cs * 0.7)}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('+', x, y - cs * 0.8); }
-      if (f.pain > 0.2) { ctx.fillStyle = `rgba(255,80,90,${Math.min(0.8, f.pain)})`; ctx.font = `700 ${Math.round(cs * 0.7)}px system-ui`; ctx.textAlign = 'center'; ctx.fillText('−', x, y - cs * 0.8); }
-      ctx.fillStyle = '#fff'; ctx.font = `600 ${Math.max(10, Math.round(cs * 0.45))}px system-ui`; ctx.textAlign = 'center'; ctx.fillText(WK.fly.name, x, y + cs * 1.1); }
-    const sc = st.ui.querySelector('#wsScore'); if (sc) sc.textContent = f ? `${WK.fly.name}: ${f.score.toFixed(1)} очков · поколение ${WK.gen}` : '';
-    const m = st.ui.querySelector('#wsMsg'); m.textContent = st.msg; m.style.opacity = st.msgT > 0 ? 1 : 0;
+    if (r.deadT > 0) { r.deadT -= dt; if (r.deadT <= 0 && !r.ace) respawn(); else if (r.deadT <= 0 && r.ace) quitRun(); return; }
+    r.acc += Math.min(dt, .1);
+    while (r.acc >= DT) {
+      r.acc -= DT; const p = r.p;
+      const hold = r.ace ? (r.inputs[Math.floor(p.t / SUB)] || 0) : st.hold || keysDown();
+      step(p, hold, r.P); r.spawnT += DT;
+      if (p.m === 2 && p.t % 2 === 0) { r.trail.push(p.x, p.y); if (r.trail.length > 400) r.trail.splice(0, 2); }
+      if (p.dead) { die(); return; }
+      if (p.win) { winRun(); return; }
+      if (r.prac && (r.cpT += DT) > 2 && (p.m || p.gr)) { r.cpT = 0; r.cps.push({p:Object.assign({}, p)}); }
+    }
+  }
+  const keysDown = () => !!(keys.Space || keys.ArrowUp || keys.KeyW);
+
+  /* ---------- редактор ---------- */
+  const TOOLS = [['block', 'Блок'], ['half', 'Полублок'], ['spike', 'Шип'], ['spikeD', 'Шип вниз'], ['saw', 'Пила'], ['saw2', 'Большая пила'], ['pad', 'Батут'], ['orb', 'Сфера-прыжок'],
+    ['pHop', 'Портал: прыжки'], ['pFly', 'Портал: полёт'], ['pWave', 'Портал: волна'], ['gUp', 'Гравитация вверх'], ['gDn', 'Гравитация вниз'], ['s0', 'Скорость 1'], ['s1', 'Скорость 2'], ['s2', 'Скорость 3'], ['s3', 'Скорость 4'], ['erase', 'Ластик'], ['hand', 'Двигать вид']];
+  const TOOL_O = {block:(x, y) => [BLOCK, x, y, 1, 1], half:(x, y) => [BLOCK, x, y, 1, .5], spike:(x, y) => [SPIKE, x, y, 0], spikeD:(x, y) => [SPIKE, x, y, 1], saw:(x, y) => [SAW, x, y, 1], saw2:(x, y) => [SAW, x, y, 2], pad:(x, y) => [PAD, x, y], orb:(x, y) => [ORB, x, y],
+    pHop:(x, y) => [P_HOP, x, y], pFly:(x, y) => [P_FLY, x, y], pWave:(x, y) => [P_WAVE, x, y], gUp:(x, y) => [G_UP, x, y], gDn:(x, y) => [G_DN, x, y], s0:(x, y) => [SP0, x, y], s1:(x, y) => [SP0 + 1, x, y], s2:(x, y) => [SP0 + 2, x, y], s3:(x, y) => [SP0 + 3, x, y]};
+  function openEd(L) {
+    st.view = 'ed'; MUS.run = false; st.run = null;
+    st.ed = st.ed && st.ed.L === L ? st.ed : {L, camX:-1.5 - 170 / ((innerHeight || 700) / 13.6), tool:'block', drag:null, P:prep(L)};
+    st.ed.P = prep(L);
+    $g('#gfSel').hidden = true; $g('#gfWin').hidden = true; const bar = $g('#gfEdBar'); bar.hidden = false;
+    bar.innerHTML = TOOLS.map(([k, n]) => `<button data-t="${k}" class="${st.ed.tool === k ? 'on' : ''}">${n}</button>`).join('');
+    bar.onclick = e => { const b = e.target.closest('button'); if (!b) return; st.ed.tool = b.dataset.t; bar.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b)); };
+    $g('#gfTop').innerHTML = `<button class="btn" id="gfEQ">К уровням</button><input id="gfEN" maxlength="30" value="${esc(L.name)}" style="width:150px">
+      <select id="gfEM">${MODE_N.map((n, i) => `<option value="${i}" ${L.m === i ? 'selected' : ''}>Старт: ${n}</option>`).join('')}</select>
+      <select id="gfES">${[0, 1, 2, 3].map(i => `<option value="${i}" ${L.sp === i ? 'selected' : ''}>Скорость ${i + 1}</option>`).join('')}</select>
+      <span class="sp"></span><button class="btn pri" id="gfET">Играть</button><button class="btn" id="gfEA">Муха-ас проверит</button><button class="btn" id="gfEC">Код</button><button class="btn" id="gfEX">Очистить</button>`;
+    const save = () => { delete L.sol; delete L.end; st.ed.P = prep(L); SS('gfLevels1', mine); };
+    st.ed.save = save;
+    $g('#gfEQ').onclick = () => { SS('gfLevels1', mine); renderSel(); };
+    $g('#gfEN').oninput = e => { L.name = e.target.value.slice(0, 30) || 'Уровень'; SS('gfLevels1', mine); };
+    $g('#gfEM').onchange = e => { L.m = +e.target.value; save(); };
+    $g('#gfES').onchange = e => { L.sp = +e.target.value; save(); };
+    $g('#gfET').onclick = () => startRun(L, {fromEd:true});
+    $g('#gfEA').onclick = () => startRun(L, {ace:true, fromEd:true});
+    $g('#gfEC').onclick = () => { const c = toCode(L); try { navigator.clipboard.writeText(c); } catch (er) {} prompt('Код уровня (скопирован в буфер) — отправь другу, он вставит его в «Ввести код уровня»:', c); };
+    $g('#gfEX').onclick = () => { if (confirm('Убрать все объекты?')) { L.o = []; save(); } };
+    flash('Ставь объекты кликом, тяни для серии. Колесо или «Двигать вид» — прокрутка', 4);
+  }
+  function edWorld(e) { const rc = st.cv.getBoundingClientRect(), bs = st.bs; return {x:st.ed.camX + (e.clientX - rc.left) / bs, y:(rc.bottom - e.clientY) / bs - .75}; }
+  function edMouse(e, kind) {
+    const ed = st.ed; if (!ed) return;
+    if (kind === 'up') { ed.drag = null; return; }
+    if (kind === 'down') {
+      const w = edWorld(e);
+      if (ed.tool === 'hand' || (e.button === 2)) { ed.drag = {pan:true, sx:e.clientX, cx:ed.camX}; return; }
+      ed.drag = {last:''}; edApply(w);
+    } else if (ed.drag) {
+      if (ed.drag.pan) { ed.camX = Math.max(-12, ed.drag.cx - (e.clientX - ed.drag.sx) / st.bs); return; }
+      const t = ed.tool; if (t === 'block' || t === 'half' || t === 'spike' || t === 'spikeD' || t === 'erase') edApply(edWorld(e));
+    }
+  }
+  function edApply(w) {
+    const ed = st.ed, L = ed.L, cx = Math.floor(w.x), cy = Math.floor(w.y);
+    if (cx < 0 || cy < 0 || cy >= CEIL) return; const k = cx + ',' + cy; if (ed.drag && ed.drag.last === k) return; if (ed.drag) ed.drag.last = k;
+    const at = o => Math.floor(o[1]) === cx && Math.floor(o[2]) === cy;
+    L.o = L.o.filter(o => !at(o));
+    if (ed.tool !== 'erase' && TOOL_O[ed.tool]) { if (L.o.length >= 8000) return flash('Слишком много объектов'); L.o.push(TOOL_O[ed.tool](cx, cy)); }
+    ed.save();
+  }
+
+  /* ---------- рисование ---------- */
+  function resize() { const c = st.cv, d = Math.min(2, devicePixelRatio || 1), w = innerWidth, h = innerHeight; if (c.width !== Math.round(w * d) || c.height !== Math.round(h * d)) { c.width = Math.round(w * d); c.height = Math.round(h * d); } st.dpr = d; }
+  function drawFlyS(c, x, y, s, ang, t, gold, m, flip) {
+    c.save(); c.translate(x, y); if (flip) c.scale(1, -1); c.rotate(ang);
+    if (gold) { c.shadowColor = '#ffd34d'; c.shadowBlur = s * .6; }
+    const fl = Math.sin(t * (m === 0 ? 26 : 55)) * .5;
+    c.fillStyle = 'rgba(205,230,255,.5)'; c.strokeStyle = 'rgba(255,255,255,.6)'; c.lineWidth = s * .03;
+    c.beginPath(); c.ellipse(-s * .12, -s * .28, s * .4, s * .15, -.5 + fl, 0, TAU); c.fill(); c.stroke();
+    c.beginPath(); c.ellipse(-s * .02, -s * .3, s * .36, s * .13, -.25 + fl * .8, 0, TAU); c.fill(); c.stroke();
+    c.fillStyle = gold ? '#e8b73b' : '#25252d'; c.beginPath(); c.ellipse(-s * .05, 0, s * .4, s * .27, 0, 0, TAU); c.fill();
+    c.shadowBlur = 0;
+    c.strokeStyle = gold ? 'rgba(120,70,0,.7)' : 'rgba(255,255,255,.18)'; c.lineWidth = s * .04;
+    for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(-s * (.32 - i * .1), -s * .2); c.lineTo(-s * (.32 - i * .1), s * .2); c.stroke(); }
+    c.fillStyle = gold ? '#a8761a' : '#16161b'; c.beginPath(); c.arc(s * .33, -s * .02, s * .2, 0, TAU); c.fill();
+    c.fillStyle = gold ? '#ff4b2e' : '#c4262d'; c.beginPath(); c.arc(s * .4, -s * .1, s * .12, 0, TAU); c.fill(); c.beginPath(); c.arc(s * .42, s * .07, s * .11, 0, TAU); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.arc(s * .44, -s * .14, s * .035, 0, TAU); c.fill();
+    if (m === 0) { c.strokeStyle = gold ? '#7a5210' : '#111'; c.lineWidth = s * .035; for (let i = -1; i <= 1; i++) { c.beginPath(); c.moveTo(s * i * .14, s * .22); c.lineTo(s * (i * .14 - .08), s * .4 + Math.sin(t * 20 + i) * s * .03); c.stroke(); } }
+    if (gold) { c.fillStyle = '#ffe27a'; c.beginPath(); c.moveTo(s * .2, -s * .22); c.lineTo(s * .25, -s * .42); c.lineTo(s * .33, -s * .3); c.lineTo(s * .4, -s * .45); c.lineTo(s * .45, -s * .24); c.closePath(); c.fill(); }
+    c.restore();
+  }
+  function drawWorld(P, camX, opt) {
+    const c = st.ctx, W = st.cv.width, H = st.cv.height, bs = H / 13.6; st.bs = bs / st.dpr;
+    const hue = P.L.hue || 200, pu = MUS.pulse;
+    const sx = x => (x - camX) * bs, sy = y => H - (y + .75) * bs;
+    const g = c.createLinearGradient(0, 0, 0, H); g.addColorStop(0, `hsl(${hue},55%,${9 + pu * 4}%)`); g.addColorStop(1, `hsl(${hue + 35},65%,4%)`);
+    c.fillStyle = g; c.fillRect(0, 0, W, H);
+    c.save(); c.globalAlpha = .07 + pu * .05; c.strokeStyle = `hsl(${hue},80%,70%)`; c.lineWidth = 2;
+    const pz = bs * 3, ox = -((camX * bs * .25) % pz);
+    for (let x = ox - pz; x < W + pz; x += pz) for (let y = 0; y < H; y += pz) c.strokeRect(x + 6, y + 6, pz - 12, pz - 12);
+    c.restore();
+    if (opt.grid) { c.strokeStyle = 'rgba(255,255,255,.07)'; c.lineWidth = 1; c.beginPath(); for (let x = Math.floor(camX); x < camX + W / bs + 1; x++) { c.moveTo(sx(x), sy(CEIL)); c.lineTo(sx(x), sy(0)); } for (let y = 0; y <= CEIL; y++) { c.moveTo(0, sy(y)); c.lineTo(W, sy(y)); } c.stroke(); }
+    c.fillStyle = `hsl(${hue},40%,7%)`; c.fillRect(0, sy(0), W, H - sy(0)); c.fillRect(0, 0, W, sy(CEIL));
+    c.strokeStyle = `hsl(${hue},90%,${62 + pu * 15}%)`; c.lineWidth = 3; c.beginPath(); c.moveTo(0, sy(0)); c.lineTo(W, sy(0)); c.moveTo(0, sy(CEIL)); c.lineTo(W, sy(CEIL)); c.stroke();
+    const x0 = Math.floor(camX) - 2, x1 = Math.ceil(camX + W / bs) + 2, fid = (st.fid = (st.fid || 0) + 1);
+    const edge = `hsl(${hue},95%,${65 + pu * 12}%)`;
+    for (let cx = x0; cx <= x1; cx++) {
+      const C = P.cols[cx]; if (!C) continue;
+      for (const b of C.b) {
+        if (b._f === fid) continue; b._f = fid;
+        const X = sx(b.x), Y = sy(b.y + b.h), w = b.w * bs, h = b.h * bs;
+        c.fillStyle = `hsl(${hue},45%,11%)`; c.fillRect(X, Y, w, h);
+        c.strokeStyle = 'rgba(255,255,255,.06)'; c.lineWidth = 1; c.strokeRect(X + 4, Y + 4, w - 8, h - 8);
+        c.strokeStyle = edge; c.lineWidth = 2.5; c.beginPath();
+        if (b.y <= 0 && b.y + b.h < CEIL) { c.moveTo(X, Y); c.lineTo(X + w, Y); }
+        else if (b.y + b.h >= CEIL && b.y > 0) { c.moveTo(X, Y + h); c.lineTo(X + w, Y + h); }
+        else c.rect(X, Y, w, h);
+        c.stroke();
+      }
+      for (const h of C.h) {
+        if (h._f === fid) continue; h._f = fid;
+        if (h.k === 0) {
+          const X = sx(h.ox), b = h.rot ? sy(h.oy + 1) : sy(h.oy), tp = h.rot ? sy(h.oy + .1) : sy(h.oy + .9);
+          c.fillStyle = '#050407'; c.strokeStyle = '#fff'; c.lineWidth = 2; c.beginPath(); c.moveTo(X + bs * .06, b); c.lineTo(X + bs / 2, tp); c.lineTo(X + bs * .94, b); c.closePath(); c.fill(); c.stroke();
+        } else {
+          const X = sx(h.cx), Y = sy(h.cy), rr = h.s * .5 * bs, a = performance.now() / 120;
+          c.save(); c.translate(X, Y); c.rotate(a); c.fillStyle = '#0c0b10'; c.strokeStyle = '#e9e9f0'; c.lineWidth = 2; c.beginPath();
+          const n = 10 * h.s; for (let i = 0; i < n * 2; i++) { const r2 = i % 2 ? rr * .78 : rr, aa = i / (n * 2) * TAU; c.lineTo(Math.cos(aa) * r2, Math.sin(aa) * r2); }
+          c.closePath(); c.fill(); c.stroke(); c.beginPath(); c.arc(0, 0, rr * .3, 0, TAU); c.stroke(); c.restore();
+        }
+      }
+      for (const t of C.t) {
+        if (t._f === fid) continue; t._f = fid;
+        if (t.k === PAD) { c.fillStyle = '#ffd23f'; c.beginPath(); c.ellipse(sx(t.x + .5), sy(t.y), bs * .42, bs * .2, 0, Math.PI, TAU); c.fill(); }
+        else { const X = sx(t.cx), Y = sy(t.cy); c.save(); c.shadowColor = '#ffd23f'; c.shadowBlur = bs * .4 * (1 + pu); c.strokeStyle = '#ffd23f'; c.lineWidth = 3; c.beginPath(); c.arc(X, Y, bs * .36, 0, TAU); c.stroke(); c.fillStyle = 'rgba(255,210,63,.35)'; c.fill(); c.restore(); }
+      }
+    }
+    const PC = {[P_HOP]:'#5be37d', [P_FLY]:'#ff6ad5', [P_WAVE]:'#4fd8ff', [G_DN]:'#5aa0ff', [G_UP]:'#ffd23f'};
+    for (const pt of P.portals) {
+      if (pt.x < x0 || pt.x > x1) continue;
+      const X = sx(pt.x + .5), Y = sy(pt.y + 1.5);
+      if (pt.t >= SP0) {
+        const n = pt.t - SP0 + 1; c.fillStyle = ['#ff9a3c', '#5be3ff', '#5be37d', '#ff5be0'][n - 1]; c.globalAlpha = .9;
+        for (let i = 0; i < n; i++) { const xx = X - bs * .35 + i * bs * .22; c.beginPath(); c.moveTo(xx, Y - bs * .6); c.lineTo(xx + bs * .3, Y); c.lineTo(xx, Y + bs * .6); c.lineTo(xx + bs * .12, Y); c.closePath(); c.fill(); }
+        c.globalAlpha = 1;
+      } else {
+        c.save(); c.shadowColor = PC[pt.t]; c.shadowBlur = bs * .5; c.strokeStyle = PC[pt.t]; c.lineWidth = 4;
+        c.beginPath(); c.ellipse(X, Y, bs * .35, bs * 1.45, 0, 0, TAU); c.stroke(); c.globalAlpha = .18; c.fillStyle = PC[pt.t]; c.fill(); c.restore();
+        c.strokeStyle = 'rgba(255,255,255,.08)'; c.setLineDash([4, 8]); c.beginPath(); c.moveTo(X, sy(CEIL)); c.lineTo(X, sy(0)); c.stroke(); c.setLineDash([]);
+        if (pt.t === G_DN || pt.t === G_UP) { c.fillStyle = PC[pt.t]; c.font = `${bs * .6}px sans-serif`; c.textAlign = 'center'; c.fillText(pt.t === G_UP ? '↑' : '↓', X, Y + bs * .2); }
+      }
+    }
+    if (P.len < Infinity && P.len < x1) { const X = sx(P.len); c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(X, sy(CEIL), bs * .3, sy(0) - sy(CEIL)); }
+    return {sx, sy, bs};
+  }
+  function draw(dt) {
+    resize(); const c = st.ctx, W = st.cv.width, H = st.cv.height;
+    MUS.pulse *= Math.pow(.02, dt);
+    if (st.view === 'ed' && st.ed) {
+      const ed = st.ed; if (keys.ArrowRight || keys.KeyD) ed.camX += dt * 20; if (keys.ArrowLeft || keys.KeyA) ed.camX = Math.max(-12, ed.camX - dt * 20);
+      const v = drawWorld(ed.P, ed.camX, {grid:true});
+      drawFlyS(c, v.sx(0), v.sy(HS[ed.L.m]), v.bs, 0, performance.now() / 1000, false, ed.L.m, false);
+      c.fillStyle = 'rgba(255,255,255,.5)'; c.font = `${12 * st.dpr}px sans-serif`; c.textAlign = 'left'; c.fillText('Старт', v.sx(-.5), v.sy(1.3));
+      return;
+    }
+    const r = st.run; if (!r) { c.fillStyle = '#07060c'; c.fillRect(0, 0, W, H); return; }
+    const p = r.p, bs = H / 13.6;
+    const camX = p.x - W * .3 / bs + (st.shake > 0 ? (Math.random() - .5) * st.shake * 1.2 : 0);
+    st.shake = Math.max(0, st.shake - dt);
+    const v = drawWorld(r.P, camX, {});
+    if (r.failX != null) { c.strokeStyle = '#ff3b3b'; c.lineWidth = 3; c.beginPath(); c.moveTo(v.sx(r.failX), v.sy(CEIL)); c.lineTo(v.sx(r.failX), v.sy(0)); c.stroke(); }
+    for (const cp of r.cps) { const X = v.sx(cp.p.x), Y = v.sy(cp.p.y); c.fillStyle = '#5be37d'; c.beginPath(); c.moveTo(X, Y - bs * .3); c.lineTo(X + bs * .2, Y); c.lineTo(X, Y + bs * .3); c.lineTo(X - bs * .2, Y); c.closePath(); c.fill(); }
+    if (r.trail.length > 3) { c.strokeStyle = r.ace ? 'rgba(255,211,77,.8)' : `hsla(${r.L.hue},90%,75%,.8)`; c.lineWidth = bs * .18; c.lineJoin = 'round'; c.beginPath(); for (let i = 0; i < r.trail.length; i += 2) c.lineTo(v.sx(r.trail[i]), v.sy(r.trail[i + 1])); if (!p.dead) c.lineTo(v.sx(p.x), v.sy(p.y)); c.stroke(); }
+    if (!p.dead && !r.solving) {
+      const ang = p.m === 2 ? -Math.atan2(p.vy * p.gs, SPD[p.sp]) : p.m === 1 ? -p.vy * p.gs * .05 : -p.vy * p.gs * .015;
+      drawFlyS(c, v.sx(p.x), v.sy(p.y), bs * (p.m === 2 ? .75 : 1.05), ang, performance.now() / 1000, r.ace, p.m, p.gs < 0);
+    }
+    for (let i = st.parts.length - 1; i >= 0; i--) { const q = st.parts[i]; q.t -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vy -= 20 * dt; if (q.t <= 0) { st.parts.splice(i, 1); continue; } c.globalAlpha = Math.min(1, q.t * 2); c.fillStyle = q.c; c.fillRect(v.sx(q.x) - bs * .08, v.sy(q.y) - bs * .08, bs * .16, bs * .16); }
+    c.globalAlpha = 1;
+    const pc = Math.min(100, p.x / r.P.len * 100), bw = Math.min(W * .5, 520 * st.dpr), bx = (W - bw) / 2, by = 18 * st.dpr;
+    c.fillStyle = 'rgba(0,0,0,.45)'; c.fillRect(bx, by, bw, 10 * st.dpr); c.fillStyle = r.ace ? '#ffd34d' : '#5be37d'; c.fillRect(bx, by, bw * pc / 100, 10 * st.dpr);
+    c.fillStyle = '#fff'; c.font = `bold ${14 * st.dpr}px sans-serif`; c.textAlign = 'center'; c.fillText(Math.floor(pc) + '%', W / 2, by + 30 * st.dpr);
+    const at = $g('#gfAtt'); if (at) { const tx = (r.ace ? 'Муха-ас · ' : r.prac ? 'Тренировка · ' : '') + 'Попытка ' + r.att; if (at.textContent !== tx) at.textContent = tx; }
   }
 
   /* ---------- режим ---------- */
+  function ensureBuilt() {
+    if (built || st.gen) return;
+    const cache = LS('gfBuilt1', null);
+    if (Array.isArray(cache) && cache.length === SPECS.length && cache.every(l => validL(l) && l.sol)) { built = cache; return; }
+    st.gen = {i:0, out:[]};
+    const go = () => {
+      if (!st.gen) return; const sp = SPECS[st.gen.i];
+      try { st.gen.out.push(generate(sp)); } catch (e) { console.warn('GF gen', sp.name, e); }
+      st.gen.i++;
+      if (st.gen.i >= SPECS.length) { built = st.gen.out; st.gen = null; if (built.length === SPECS.length) SS('gfBuilt1', built); if (st.open && st.view === 'sel') renderSel(); }
+      else { const el = st.ui && st.ui.querySelector('#gfGenInf'); if (el) el.textContent = `Готово ${st.gen.i} из ${SPECS.length}…`; setTimeout(go, 30); }
+    };
+    setTimeout(go, 60);
+  }
   function show(on) {
     if (on && !st.ui) buildUI();
     if (!st.ui) return; st.ui.hidden = !on; st.open = on;
-    if (on) { if (!st.live) restartLive(); render(); }
+    if (on) { ensureBuilt(); renderSel(); } else { MUS.run = false; st.hold = false; }
   }
   function frame(dt) {
     if (!st.open) return;
-    if (st.run && st.live) { const n = Math.min(40, Math.round(dt * st.speed / DTW) || 1); for (let i = 0; i < n; i++) stepFly(st.live, DTW); if (st.live.t > 120) { const s = st.live.score; restartLive(); if (st.speed === 1) flash(`Забег окончен: ${s.toFixed(1)} очков`); } }
-    if (st.msgT > 0) st.msgT -= dt;
-    draw();
+    musTick();
+    if (st.view === 'play') tickRun(dt);
+    if (st.msgT > 0) { st.msgT -= dt; if (st.msgT <= 0) $g('#gfMsg').style.opacity = 0; }
+    if (st.view !== 'sel') draw(dt);
   }
   function key(e) {
     if (document.activeElement && /INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName)) return;
-    if (e.code === 'Escape') setMode('menu'); else if (e.code === 'Space') { e.preventDefault(); st.run = !st.run; render(); }
-    else if (e.code === 'KeyG') praise(1); else if (e.code === 'KeyB') praise(-1);
+    if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+    if (e.code === 'Escape') { if (st.view === 'play') quitRun(); else if (st.view === 'ed') { SS('gfLevels1', mine); renderSel(); } else setMode('menu'); return; }
+    if (st.view === 'play' && st.run) {
+      if (e.code === 'KeyR' && !st.run.ace) startRun(st.run.L, {prac:st.run.prac, fromEd:st.run.fromEd});
+      else if (e.code === 'KeyZ' && st.run.prac && !st.run.p.dead) st.run.cps.push({p:Object.assign({}, st.run.p)});
+      else if (e.code === 'KeyX' && st.run.prac) st.run.cps.pop();
+      else if ((e.code === 'Enter') && st.run.won) startRun(st.run.L, {ace:st.run.ace, prac:st.run.prac, fromEd:st.run.fromEd});
+    }
   }
-  return {show, frame, key, generations, get work() { return WK; }, get live() { return st.live; }, example:k => { WK = example(k); pop = null; restartLive(); render(); }, toCode, fromCode, openWork};
+  return {show, frame, key, generate, solver, prep, step, newP, SPECS, rle, unrle, get built() { return built; }, set built(v) { built = v; }, get run() { return st.run; }, startRun, toCode, fromCode};
 })();
 
-$('#mWs').onclick = () => { initAudio(); setMode('ws'); };
+$('#mGf').onclick = () => { initAudio(); setMode('gf'); };
 applyLocation(store.settings.loc); tuneEnv(scene); renderLocs();
 renderWbar(); setMode('menu'); requestAnimationFrame(frame);
-window.FLY3D = {S, G, LB, store, SQ, WS, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, EYE, LOBBY, tickHunt, drawHunt, composer, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
+window.FLY3D = {S, G, LB, store, SQ, GF, startHunt, openLab, setWeapon, attackDown, attackUp, pl, keys, inp, setPause, setMode, renderer, camera, scene, chooseLocation, draw, ACH, WIN, EGG, OBS, SB, EYE, LOBBY, tickHunt, drawHunt, composer, frame:dt => { last = performance.now() - dt * 1000; frame(performance.now()); },
   snap(w, h) { const ow = innerWidth, oh = innerHeight; renderer.setSize(w, h, false); composer.setSize(w, h); gtao.setSize(w, h); bloom.resolution.set(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); draw(); const url = renderer.domElement.toDataURL('image/jpeg', 0.88); resize(); return url; },
   step(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) tickHunt(); },
   stepV(sec) { const n = Math.round(sec / DT); for (let i = 0; i < n; i++) { tickHunt(); drawHunt(DT); } },   /* то же, но с отрисовкой — работает зрение мухи */
